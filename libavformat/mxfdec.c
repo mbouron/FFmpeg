@@ -1545,7 +1545,27 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                 default:
                     av_log(mxf->fc, AV_LOG_INFO, "Unknown frame layout type: %d\n", descriptor->frame_layout);
             }
-            if (st->codec->codec_id == AV_CODEC_ID_RAWVIDEO) {
+            switch (st->codec->codec_id) {
+            case AV_CODEC_ID_JPEG2000:
+                if (descriptor->frame_layout == SegmentedFrame ||
+                    descriptor->frame_layout == SeparateFields) {
+                    st->codec->extradata_size = 2;
+                    st->codec->extradata = av_mallocz(st->codec->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
+                    if (!st->codec->extradata)
+                        return AVERROR(ENOMEM);
+                    st->codec->extradata[0] = 1;
+                    if (descriptor->field_dominance == 1)
+                        st->codec->extradata[1] = AV_FIELD_TT;
+                    else if (descriptor->field_dominance == 2)
+                        st->codec->extradata[1] = AV_FIELD_BB;
+                    else {
+                        av_log(mxf->fc, AV_LOG_INFO,
+                               "Invalid field dominance value: %d, defaulting to TFF\n", descriptor->field_dominance);
+                        st->codec->extradata[1] = AV_FIELD_TT;
+                    }
+                }
+                break;
+            case AV_CODEC_ID_RAWVIDEO:
                 st->codec->pix_fmt = descriptor->pix_fmt;
                 if (st->codec->pix_fmt == AV_PIX_FMT_NONE) {
                     pix_fmt_ul = mxf_get_codec_ul(ff_mxf_pixel_format_uls,
@@ -1561,6 +1581,7 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                         }
                     }
                 }
+                break;
             }
             st->need_parsing = AVSTREAM_PARSE_HEADERS;
         } else if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
