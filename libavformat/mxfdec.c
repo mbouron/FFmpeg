@@ -2036,7 +2036,30 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                 default:
                     av_log(mxf->fc, AV_LOG_INFO, "Unknown frame layout type: %d\n", descriptor->frame_layout);
             }
-            if (st->codec->codec_id == AV_CODEC_ID_RAWVIDEO) {
+            switch (st->codec->codec_id) {
+            case AV_CODEC_ID_JPEG2000:
+                if (descriptor->frame_layout == SegmentedFrame ||
+                    descriptor->frame_layout == SeparateFields) {
+                    const char *buf;
+                    const char* fdstr[] = { "tff", "bff" };
+                    int layout = descriptor->frame_layout;
+
+                    buf = layout == SegmentedFrame ? "segmented_frame" : "separate_fields";
+                    av_dict_set(&st->metadata, "mxf_frame_layout", buf, 0);
+
+                    if (descriptor->field_dominance != 1 &&
+                        descriptor->field_dominance != 2) {
+                        av_log(mxf->fc, AV_LOG_INFO,
+                               "Invalid field dominance value: %d, defaulting to TFF\n", descriptor->field_dominance);
+                        buf = fdstr[0];
+                    } else
+                        buf = fdstr[descriptor->field_dominance - 1];
+
+                    av_dict_set(&st->metadata, "mxf_field_dominance", buf, 0);
+                    av_log(mxf->fc, AV_LOG_INFO, "Use filtergraph setfield=mode=%s,tinterlace to get full frames\n", buf);
+                }
+                break;
+            case AV_CODEC_ID_RAWVIDEO:
                 st->codec->pix_fmt = descriptor->pix_fmt;
                 if (st->codec->pix_fmt == AV_PIX_FMT_NONE) {
                     pix_fmt_ul = mxf_get_codec_ul(ff_mxf_pixel_format_uls,
@@ -2052,6 +2075,7 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                         }
                     }
                 }
+                break;
             }
             st->need_parsing = AVSTREAM_PARSE_HEADERS;
             if (material_track->sequence->origin) {
