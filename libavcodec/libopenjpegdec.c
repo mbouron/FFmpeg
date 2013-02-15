@@ -73,6 +73,12 @@ typedef struct {
     AVClass *class;
     opj_dparameters_t dec_params;
     int lowqual;
+    AVFrame* picture;
+    uint64_t curpict;
+    int separate_fields;
+    int field_order;
+    int top_field_coded_first;
+    int width, height;
 } LibOpenJPEGContext;
 
 static inline int libopenjpeg_matches_pix_fmt(const opj_image_t *image, enum AVPixelFormat pix_fmt)
@@ -153,12 +159,13 @@ static inline int libopenjpeg_ispacked(enum AVPixelFormat pix_fmt)
     return 1;
 }
 
-static inline void libopenjpeg_copy_to_packed8(AVFrame *picture, opj_image_t *image) {
+static inline void libopenjpeg_copy_to_packed8(AVFrame *picture, opj_image_t *image, int separate_fields, int field_pos) {
     uint8_t *img_ptr;
-    int index, x, y, c;
+    int index, x, y, c, line;
     for (y = 0; y < picture->height; y++) {
         index = y*picture->width;
-        img_ptr = picture->data[0] + y*picture->linesize[0];
+        line = separate_fields * (field_pos + y) + y;
+        img_ptr = picture->data[0] + line*picture->linesize[0];
         for (x = 0; x < picture->width; x++, index++) {
             for (c = 0; c < image->numcomps; c++) {
                 *img_ptr++ = image->comps[c].data[index];
@@ -167,16 +174,17 @@ static inline void libopenjpeg_copy_to_packed8(AVFrame *picture, opj_image_t *im
     }
 }
 
-static inline void libopenjpeg_copy_to_packed16(AVFrame *picture, opj_image_t *image) {
+static inline void libopenjpeg_copy_to_packed16(AVFrame *picture, opj_image_t *image, int separate_fields, int field_pos) {
     uint16_t *img_ptr;
-    int index, x, y, c;
+    int index, x, y, c, line;
     int adjust[4];
     for (x = 0; x < image->numcomps; x++)
         adjust[x] = FFMAX(FFMIN(16 - image->comps[x].prec, 8), 0);
 
     for (y = 0; y < picture->height; y++) {
         index = y*picture->width;
-        img_ptr = (uint16_t*) (picture->data[0] + y*picture->linesize[0]);
+        line = separate_fields * (field_pos + y) + y;
+        img_ptr = (uint16_t*) (picture->data[0] + line*picture->linesize[0]);
         for (x = 0; x < picture->width; x++, index++) {
             for (c = 0; c < image->numcomps; c++) {
                 *img_ptr++ = image->comps[c].data[index] << adjust[c];
@@ -185,7 +193,7 @@ static inline void libopenjpeg_copy_to_packed16(AVFrame *picture, opj_image_t *i
     }
 }
 
-static inline void libopenjpeg_copyto8(AVFrame *picture, opj_image_t *image) {
+static inline void libopenjpeg_copyto8(AVFrame *picture, opj_image_t *image, int separate_fields, int field_pos) {
     int *comp_data;
     uint8_t *img_ptr;
     int index, x, y;
@@ -193,7 +201,8 @@ static inline void libopenjpeg_copyto8(AVFrame *picture, opj_image_t *image) {
     for (index = 0; index < image->numcomps; index++) {
         comp_data = image->comps[index].data;
         for (y = 0; y < image->comps[index].h; y++) {
-            img_ptr = picture->data[index] + y * picture->linesize[index];
+            int line = separate_fields * (field_pos + y) + y;
+            img_ptr = picture->data[index] + line * picture->linesize[index];
             for (x = 0; x < image->comps[index].w; x++) {
                 *img_ptr = (uint8_t) *comp_data;
                 img_ptr++;
@@ -203,14 +212,15 @@ static inline void libopenjpeg_copyto8(AVFrame *picture, opj_image_t *image) {
     }
 }
 
-static inline void libopenjpeg_copyto16(AVFrame *picture, opj_image_t *image) {
+static inline void libopenjpeg_copyto16(AVFrame *picture, opj_image_t *image, int separate_fields, int field_pos) {
     int *comp_data;
     uint16_t *img_ptr;
     int index, x, y;
     for (index = 0; index < image->numcomps; index++) {
         comp_data = image->comps[index].data;
         for (y = 0; y < image->comps[index].h; y++) {
-            img_ptr = (uint16_t*) (picture->data[index] + y * picture->linesize[index]);
+            int line = separate_fields * (field_pos + y) + y;
+            img_ptr = (uint16_t*) (picture->data[index] + line * picture->linesize[index]);
             for (x = 0; x < image->comps[index].w; x++) {
                 *img_ptr = *comp_data;
                 img_ptr++;
@@ -224,7 +234,24 @@ static av_cold int libopenjpeg_decode_init(AVCodecContext *avctx)
 {
     LibOpenJPEGContext *ctx = avctx->priv_data;
 
+    if (avctx->extradata_size >= 2) {
+        ctx->picture = av_frame_alloc();
+        ctx->separate_fields = avctx->extradata[0];
+        if (ctx->separate_fields) {
+            avctx->field_order          = ctx->field_order = avctx->extradata[1];
+            ctx->top_field_coded_first  = (ctx->field_order == AV_FIELD_TT ||
+                                           ctx->field_order == AV_FIELD_TB);
+        }
+    }
+
     opj_set_default_decoder_parameters(&ctx->dec_params);
+    return 0;
+}
+
+static av_cold int libopenjpeg_decode_uninit(AVCodecContext *avctx)
+{
+    LibOpenJPEGContext *ctx = avctx->priv_data;
+    av_frame_free(&ctx->picture);
     return 0;
 }
 
@@ -244,9 +271,22 @@ static int libopenjpeg_decode_frame(AVCodecContext *avctx,
     int width, height, ret = -1;
     int pixel_size = 0;
     int ispacked = 0;
-    int i;
+    int realloc_il_buffer = 0;
+    int i, field_pos, field_nb;
 
     *got_frame = 0;
+    if (ctx->separate_fields) {
+        picture = ctx->picture;
+        frame.f = picture;
+    }
+
+    field_nb = ctx->curpict & 1;
+    field_pos = field_nb ^ !ctx->top_field_coded_first;
+
+    if (ctx->separate_fields && avctx->thread_count > 1) {
+        av_log(avctx, AV_LOG_ERROR, "Separate fields layout does not support threading. Please specify -threads 1 before input.\n");
+        return AVERROR(EINVAL);
+    }
 
     // Check if input is a raw jpeg2k codestream or in jp2 wrapping
     if ((AV_RB32(buf)     == 12)           &&
@@ -292,10 +332,19 @@ static int libopenjpeg_decode_frame(AVCodecContext *avctx,
     width  = image->x1 - image->x0;
     height = image->y1 - image->y0;
 
+    if (ctx->separate_fields)
+        height *= 2;
+
     if (av_image_check_size(width, height, 0, avctx) < 0) {
         av_log(avctx, AV_LOG_ERROR,
                "%dx%d dimension invalid.\n", width, height);
         goto done;
+    }
+
+    if (ctx->width != width || ctx->height != height) {
+        ctx->width = width;
+        ctx->height = height;
+        realloc_il_buffer = 1;
     }
 
     avcodec_set_dimensions(avctx, width, height);
@@ -315,8 +364,13 @@ static int libopenjpeg_decode_frame(AVCodecContext *avctx,
         if (image->comps[i].prec > avctx->bits_per_raw_sample)
             avctx->bits_per_raw_sample = image->comps[i].prec;
 
-    if (ff_thread_get_buffer(avctx, &frame, 0) < 0)
-        goto done;
+    if (ctx->separate_fields && realloc_il_buffer && picture->data[0])
+        av_frame_unref(picture);
+
+    if (!ctx->separate_fields ||
+        (ctx->separate_fields && (!ctx->curpict || realloc_il_buffer)))
+        if (ff_thread_get_buffer(avctx, &frame, 0) < 0)
+            goto done;
 
     ctx->dec_params.cp_limit_decoding = NO_LIMITATION;
     ctx->dec_params.cp_reduce = avctx->lowres;
@@ -346,28 +400,28 @@ static int libopenjpeg_decode_frame(AVCodecContext *avctx,
     switch (pixel_size) {
     case 1:
         if (ispacked) {
-            libopenjpeg_copy_to_packed8(picture, image);
+            libopenjpeg_copy_to_packed8(picture, image, ctx->separate_fields, field_pos);
         } else {
-            libopenjpeg_copyto8(picture, image);
+            libopenjpeg_copyto8(picture, image, ctx->separate_fields, field_pos);
         }
         break;
     case 2:
         if (ispacked) {
-            libopenjpeg_copy_to_packed8(picture, image);
+            libopenjpeg_copy_to_packed8(picture, image, ctx->separate_fields, field_pos);
         } else {
-            libopenjpeg_copyto16(picture, image);
+            libopenjpeg_copyto16(picture, image, ctx->separate_fields, field_pos);
         }
         break;
     case 3:
     case 4:
         if (ispacked) {
-            libopenjpeg_copy_to_packed8(picture, image);
+            libopenjpeg_copy_to_packed8(picture, image, ctx->separate_fields, field_pos);
         }
         break;
     case 6:
     case 8:
         if (ispacked) {
-            libopenjpeg_copy_to_packed16(picture, image);
+            libopenjpeg_copy_to_packed16(picture, image, ctx->separate_fields, field_pos);
         }
         break;
     default:
@@ -378,7 +432,13 @@ static int libopenjpeg_decode_frame(AVCodecContext *avctx,
     *got_frame = 1;
     ret        = buf_size;
 
+    if (ctx->separate_fields)
+        if (field_nb)
+            av_frame_ref(data, ctx->picture);
+        else
+            *got_frame = 0;
 done:
+    ctx->curpict++;
     opj_image_destroy(image);
     opj_destroy_decompress(dec);
     return ret;
@@ -406,6 +466,7 @@ AVCodec ff_libopenjpeg_decoder = {
     .priv_data_size   = sizeof(LibOpenJPEGContext),
     .init             = libopenjpeg_decode_init,
     .decode           = libopenjpeg_decode_frame,
+    .close            = libopenjpeg_decode_uninit,
     .capabilities     = CODEC_CAP_DR1 | CODEC_CAP_FRAME_THREADS,
     .max_lowres       = 31,
     .long_name        = NULL_IF_CONFIG_SMALL("OpenJPEG JPEG 2000"),
