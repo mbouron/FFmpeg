@@ -135,6 +135,8 @@ typedef struct {
     int intra_only;
     uint64_t sample_count;
     int64_t original_duration;  ///< duration before multiplying st->duration by SampleRate/EditRate
+    int64_t field_count;
+    int frame_layout;
 } MXFTrack;
 
 typedef struct {
@@ -1526,6 +1528,7 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                 st->codec->codec_id = container_ul->id;
             st->codec->width = descriptor->width;
             st->codec->height = descriptor->height; /* Field height, not frame height */
+            source_track->frame_layout = descriptor->frame_layout;
             switch (descriptor->frame_layout) {
                 case FullFrame:
                     st->codec->field_order = AV_FIELD_PROGRESSIVE;
@@ -2292,17 +2295,24 @@ static int mxf_read_packet_old(AVFormatContext *s, AVPacket *pkt)
             pkt->pos = klv.offset;
 
             codec = s->streams[index]->codec;
-            if (codec->codec_type == AVMEDIA_TYPE_VIDEO && next_ofs >= 0) {
-                /* mxf->current_edit_unit good - see if we have an index table to derive timestamps from */
-                MXFIndexTable *t = &mxf->index_tables[0];
+            if (codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+                if (codec->codec_id == AV_CODEC_ID_JPEG2000 &&
+                    (track->frame_layout == SeparateFields ||
+                     track->frame_layout == SegmentedFrame)) {
+                    pkt->pts = track->field_count - 1;
+                    track->field_count++;
+                } else if (next_ofs >= 0) {
+                    /* mxf->current_edit_unit good - see if we have an index table to derive timestamps from */
+                    MXFIndexTable *t = &mxf->index_tables[0];
 
-                if (mxf->nb_index_tables >= 1 && mxf->current_edit_unit < t->nb_ptses) {
-                    pkt->dts = mxf->current_edit_unit + t->first_dts;
-                    pkt->pts = t->ptses[mxf->current_edit_unit];
-                } else if (track->intra_only) {
-                    /* intra-only -> PTS = EditUnit.
-                     * let utils.c figure out DTS since it can be < PTS if low_delay = 0 (Sony IMX30) */
-                    pkt->pts = mxf->current_edit_unit;
+                    if (mxf->nb_index_tables >= 1 && mxf->current_edit_unit < t->nb_ptses) {
+                        pkt->dts = mxf->current_edit_unit + t->first_dts;
+                        pkt->pts = t->ptses[mxf->current_edit_unit];
+                    } else if (track->intra_only) {
+                        /* intra-only -> PTS = EditUnit.
+                        * let utils.c figure out DTS since it can be < PTS if low_delay = 0 (Sony IMX30) */
+                        pkt->pts = mxf->current_edit_unit;
+                    }
                 }
             } else if (codec->codec_type == AVMEDIA_TYPE_AUDIO) {
                 int ret = mxf_set_audio_pts(mxf, codec, pkt);
@@ -2327,6 +2337,7 @@ static int mxf_read_packet(AVFormatContext *s, AVPacket *pkt)
     int ret, size;
     int64_t ret64, pos, next_pos;
     AVStream *st;
+    MXFTrack *track;
     MXFIndexTable *t;
     int edit_units;
 
@@ -2367,7 +2378,13 @@ static int mxf_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     pkt->stream_index = 0;
 
-    if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO && t->ptses &&
+    track = st->priv_data;
+    if (st->codec->codec_id == AV_CODEC_ID_JPEG2000 &&
+        (track->frame_layout == SeparateFields ||
+         track->frame_layout == SegmentedFrame)) {
+        pkt->pts = track->field_count - 1;
+        track->field_count++;
+    } else if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO && t->ptses &&
         mxf->current_edit_unit >= 0 && mxf->current_edit_unit < t->nb_ptses) {
         pkt->dts = mxf->current_edit_unit + t->first_dts;
         pkt->pts = t->ptses[mxf->current_edit_unit];
