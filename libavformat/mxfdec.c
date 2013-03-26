@@ -2057,6 +2057,9 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
 
                     av_dict_set(&st->metadata, "mxf_field_dominance", buf, 0);
                     av_log(mxf->fc, AV_LOG_INFO, "Use filtergraph setfield=mode=%s,tinterlace to get full frames\n", buf);
+
+                    st->codec->time_base = st->time_base;
+                    st->time_base = (AVRational) { st->time_base.num, st->time_base.den * 2};
                 }
                 break;
             case AV_CODEC_ID_RAWVIDEO:
