@@ -1553,6 +1553,8 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
             case AV_CODEC_ID_JPEG2000:
                 if (descriptor->frame_layout == SegmentedFrame ||
                     descriptor->frame_layout == SeparateFields) {
+                    st->codec->time_base = st->time_base;
+                    st->time_base = (AVRational) { st->time_base.num, st->time_base.den * 2};
                     st->codec->extradata_size = 2;
                     st->codec->extradata = av_mallocz(st->codec->extradata_size + FF_INPUT_BUFFER_PADDING_SIZE);
                     if (!st->codec->extradata)
