@@ -47,6 +47,7 @@
 
 #include "libavutil/aes.h"
 #include "libavutil/avassert.h"
+#include "libavutil/avstring.h"
 #include "libavutil/mathematics.h"
 #include "libavcodec/bytestream.h"
 #include "libavutil/intreadwrite.h"
@@ -297,6 +298,8 @@ static const uint8_t mxf_indirect_value_utf16le[]          = { 0x4c,0x00,0x02,0x
 static const uint8_t mxf_indirect_value_utf16be[]          = { 0x42,0x01,0x10,0x02,0x00,0x00,0x00,0x00,0x00,0x06,0x0e,0x2b,0x34,0x01,0x04,0x01,0x01 };
 
 #define IS_KLV_KEY(x, y) (!memcmp(x, y, sizeof(y)))
+
+static const char *j2ki_field_rate_companies[] = { "Canopus", "SAMMA" };
 
 static void mxf_free_metadataset(MXFMetadataSet **ctx, int freectx)
 {
@@ -1800,6 +1803,7 @@ static int mxf_parse_physical_source_package(MXFContext *mxf, MXFTrack *source_t
 
 static int mxf_parse_structural_metadata(MXFContext *mxf)
 {
+    AVFormatContext *s = mxf->fc;
     MXFPackage *material_package = NULL;
     int i, j, k, ret;
 
@@ -2042,7 +2046,9 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                     descriptor->frame_layout == SeparateFields) {
                     const char *buf;
                     const char* fdstr[] = { "tff", "bff" };
+                    int l, field_rate = 0;
                     int layout = descriptor->frame_layout;
+                    AVDictionaryEntry *entry = av_dict_get(s->metadata, "company_name", NULL, 0);
 
                     buf = layout == SegmentedFrame ? "segmented_frame" : "separate_fields";
                     av_dict_set(&st->metadata, "mxf_frame_layout", buf, 0);
@@ -2058,8 +2064,22 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                     av_dict_set(&st->metadata, "mxf_field_dominance", buf, 0);
                     av_log(mxf->fc, AV_LOG_INFO, "Use filtergraph setfield=mode=%s,tinterlace to get full frames\n", buf);
 
-                    st->codec->time_base = st->time_base;
-                    st->time_base = (AVRational) { st->time_base.num, st->time_base.den * 2};
+                    if (entry) {
+                        for (l = 0; l < FF_ARRAY_ELEMS(j2ki_field_rate_companies); l++) {
+                            if (av_stristr(entry->value, j2ki_field_rate_companies[l])) {
+                                av_log(s, AV_LOG_INFO, "J2ki sample rate will be interpreted as field rate for company: %s\n", entry->value);
+                                field_rate = 1;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (field_rate) {
+                        st->codec->time_base = (AVRational) { st->time_base.num, st->time_base.den / 2 };
+                    } else {
+                        st->codec->time_base = st->time_base;
+                        st->time_base = (AVRational) { st->time_base.num, st->time_base.den * 2};
+                    }
                 }
                 break;
             case AV_CODEC_ID_RAWVIDEO:
