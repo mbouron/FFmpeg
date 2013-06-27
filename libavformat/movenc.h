@@ -141,6 +141,8 @@ typedef struct MOVTrack {
         int     packet_entry;
         int     slices;
     } vc1_info;
+
+    int stream_index;
 } MOVTrack;
 
 typedef struct MOVMuxContext {
@@ -172,6 +174,11 @@ typedef struct MOVMuxContext {
 
     int use_editlist;
     int video_track_timescale;
+
+    AVPacketList *covers;
+    int nb_input_streams; ///< number of input stream used
+    int next_stream_index; ///< next stream index available
+    int chapter_stream_index; ///< chapter stream index
 } MOVMuxContext;
 
 #define FF_MOV_FLAG_RTP_HINT 1
@@ -185,10 +192,11 @@ typedef struct MOVMuxContext {
 
 int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt);
 
-int ff_mov_init_hinting(AVFormatContext *s, int index, int src_index);
+int ff_mov_init_hinting(AVFormatContext *s, int index, int stream_index, int src_index);
 int ff_mov_add_hinted_packet(AVFormatContext *s, AVPacket *pkt,
                              int track_index, int sample,
                              uint8_t *sample_data, int sample_size);
 void ff_mov_close_hinting(MOVTrack *track);
+int ff_mov_get_track_index(MOVMuxContext *mov, int stream_index);
 
 #endif /* AVFORMAT_MOVENC_H */

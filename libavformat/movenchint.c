@@ -20,22 +20,28 @@
  */
 
 #include "movenc.h"
+#include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
 #include "internal.h"
 #include "rtpenc_chain.h"
 #include "avio_internal.h"
 #include "rtp.h"
 
-int ff_mov_init_hinting(AVFormatContext *s, int index, int src_index)
+int ff_mov_init_hinting(AVFormatContext *s, int index, int stream_index, int src_index)
 {
     MOVMuxContext *mov  = s->priv_data;
     MOVTrack *track     = &mov->tracks[index];
-    MOVTrack *src_track = &mov->tracks[src_index];
     AVStream *src_st    = s->streams[src_index];
+    int src_track_index = ff_mov_get_track_index(mov, src_index);
+    MOVTrack *src_track;
     int ret = AVERROR(ENOMEM);
 
+    av_assert0(src_track_index >= 0);
+    src_track = &mov->tracks[src_track_index];
+
     track->tag = MKTAG('r','t','p',' ');
-    track->src_track = src_index;
+    track->src_track = src_track_index;
+    track->stream_index = stream_index;
 
     track->enc = avcodec_alloc_context3(NULL);
     if (!track->enc)
@@ -445,7 +451,7 @@ int ff_mov_add_hinted_packet(AVFormatContext *s, AVPacket *pkt,
     hint_pkt.size = size = avio_close_dyn_buf(hintbuf, &buf);
     hint_pkt.data = buf;
     hint_pkt.pts  = hint_pkt.dts;
-    hint_pkt.stream_index = track_index;
+    hint_pkt.stream_index = trk->stream_index;
     if (pkt->flags & AV_PKT_FLAG_KEY)
         hint_pkt.flags |= AV_PKT_FLAG_KEY;
     if (count > 0)
