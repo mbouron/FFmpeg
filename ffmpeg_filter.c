@@ -706,6 +706,8 @@ static int configure_input_video_filter(FilterGraph *fg, InputFilter *ifilter,
     int ret, pad_idx = 0;
     int64_t tsoffset = 0;
 
+    AVDictionaryEntry *entry;
+
     if (ist->dec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
         av_log(NULL, AV_LOG_ERROR, "Cannot connect video filter to audio input\n");
         return AVERROR(EINVAL);
@@ -760,6 +762,29 @@ static int configure_input_video_filter(FilterGraph *fg, InputFilter *ifilter,
             snprintf(rotate_buf, sizeof(rotate_buf), "%f*PI/180", theta);
             ret = insert_filter(&last_filter, &pad_idx, "rotate", rotate_buf);
         }
+        if (ret < 0)
+            return ret;
+    }
+
+    entry = av_dict_get(ist->st->metadata, "mxf_frame_layout", NULL, 0);
+    if (entry && entry->value &&
+        (!strcmp(entry->value, "separate_fields") ||
+         !strcmp(entry->value, "segmented_frame"))) {
+
+        entry = av_dict_get(ist->st->metadata, "mxf_field_dominance", NULL, 0);
+        if (entry && entry->value) {
+            av_bprint_init(&args, 0, 1);
+            av_bprintf(&args, "mode=%s", entry->value);
+
+            ret = insert_filter(&last_filter, &pad_idx, "setfield", args.str);
+            av_bprint_finalize(&args, NULL);
+
+            if (ret < 0)
+                return ret;
+        }
+
+
+        ret = insert_filter(&last_filter, &pad_idx, "tinterlace", "mode=merge");
         if (ret < 0)
             return ret;
     }
