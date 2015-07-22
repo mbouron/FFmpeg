@@ -31,6 +31,7 @@
 #include <stdint.h>
 
 #include "libavutil/avstring.h"
+#include "libavutil/bprint.h"
 #include "libavutil/colorspace.h"
 #include "libavutil/eval.h"
 #include "libavutil/mathematics.h"
@@ -1961,10 +1962,13 @@ static int configure_video_filters(AVFilterGraph *graph, VideoState *is, const c
     char sws_flags_str[128];
     char buffersrc_args[256];
     int ret;
+    AVBPrint args;
+    AVDictionaryEntry *entry;
     AVFilterContext *filt_src = NULL, *filt_out = NULL, *last_filter = NULL;
     AVCodecContext *codec = is->video_st->codec;
     AVRational fr = av_guess_frame_rate(is->ic, is->video_st, NULL);
 
+    av_bprint_init(&args, 0, 1);
     av_opt_get_int(sws_opts, "sws_flags", 0, &sws_flags);
     snprintf(sws_flags_str, sizeof(sws_flags_str), "flags=%"PRId64, sws_flags);
     graph->scale_sws_opts = av_strdup(sws_flags_str);
@@ -2033,6 +2037,23 @@ static int configure_video_filters(AVFilterGraph *graph, VideoState *is, const c
         }
     }
 
+    entry = av_dict_get(is->video_st->metadata, "mxf_frame_layout", NULL, 0);
+    if (entry && entry->value &&
+        (!strcmp(entry->value, "separate_fields") ||
+         !strcmp(entry->value, "segmented_frame"))) {
+
+        entry = av_dict_get(is->video_st->metadata, "mxf_field_dominance", NULL, 0);
+        if (entry && entry->value) {
+
+            av_bprintf(&args, "mode=%s", entry->value);
+
+            INSERT_FILT("setfield", args.str);
+            av_bprint_finalize(&args, NULL);
+        }
+
+        INSERT_FILT("tinterlace", "mode=merge");
+    }
+
     if ((ret = configure_filtergraph(graph, vfilters, filt_src, last_filter)) < 0)
         goto fail;
 
@@ -2040,6 +2061,7 @@ static int configure_video_filters(AVFilterGraph *graph, VideoState *is, const c
     is->out_video_filter = filt_out;
 
 fail:
+    av_bprint_finalize(&args, NULL);
     return ret;
 }
 
