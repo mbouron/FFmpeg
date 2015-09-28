@@ -72,6 +72,8 @@ HEADERS-$(CONFIG_LZO)                   += lzo.h
 
 HEADERS-$(CONFIG_OPENCL)                += opencl.h
 
+HEADERS-$(CONFIG_JNI)                   += jni.h
+
 ARCH_HEADERS = bswap.h                                                  \
                intmath.h                                                \
                intreadwrite.h                                           \
@@ -148,6 +150,7 @@ OBJS-$(!HAVE_ATOMICS_NATIVE)            += atomic.o                     \
 
 OBJS-$(CONFIG_LZO)                      += lzo.o
 OBJS-$(CONFIG_OPENCL)                   += opencl.o opencl_internal.o
+OBJS-$(CONFIG_JNI)                      += jni.o jni_internal.o
 
 OBJS += $(COMPAT_OBJS:%=../compat/%)
 
@@ -158,6 +161,7 @@ SKIPHEADERS-$(HAVE_ATOMICS_GCC)        += atomic_gcc.h
 SKIPHEADERS-$(HAVE_ATOMICS_SUNCC)      += atomic_suncc.h
 SKIPHEADERS-$(HAVE_ATOMICS_WIN32)      += atomic_win32.h
 SKIPHEADERS-$(CONFIG_OPENCL)           += opencl.h
+SKIPHEADERS-$(CONFIG_JNI)              += jni_internal.h
 
 TESTPROGS = adler32                                                     \
             aes                                                         \
