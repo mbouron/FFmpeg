@@ -368,6 +368,7 @@ void av_register_all(void)
 
     /* protocols */
     REGISTER_PROTOCOL(ASYNC,            async);
+    REGISTER_PROTOCOL(ANDROID_CONTENT,  android_content);
     REGISTER_PROTOCOL(BLURAY,           bluray);
     REGISTER_PROTOCOL(CACHE,            cache);
     REGISTER_PROTOCOL(CONCAT,           concat);
