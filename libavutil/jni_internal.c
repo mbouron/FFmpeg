@@ -29,6 +29,11 @@
 
 extern JavaVM *java_vm;
 
+extern jobject application_context;
+
+extern jobject application_class_loader;
+extern jmethodID find_class_id;
+
 JNIEnv *avpriv_jni_attach_env(int *attached, void *log_ctx)
 {
     int ret = 0;
@@ -243,7 +248,7 @@ int avpriv_jni_exception_check(JNIEnv *env, int log, void *log_ctx)
 
     if (!log) {
         (*(env))->ExceptionClear((env));
-        return -1;
+        return AVERROR_EXTERNAL;
     }
 
     exception = (*env)->ExceptionOccurred(env);
@@ -259,7 +264,7 @@ int avpriv_jni_exception_check(JNIEnv *env, int log, void *log_ctx)
     av_log(log_ctx, AV_LOG_ERROR, "%s\n", message);
     av_free(message);
 
-    return -1;
+    return AVERROR_EXTERNAL;
 }
 
 int avpriv_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfields_mapping, int global, void *log_ctx)
@@ -277,7 +282,7 @@ int avpriv_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField 
             last_clazz = NULL;
 
             clazz = (*env)->FindClass(env, jfields_mapping[i].name);
-            if ((ret = avpriv_jni_exception_check(env, mandatory, log_ctx) && mandatory) < 0) {
+            if ((ret = avpriv_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
                 goto done;
             }
 
@@ -388,4 +393,29 @@ int avpriv_jni_reset_jfields(JNIEnv *env, void *jfields, const struct FFJniField
     }
 
     return 0;
+}
+
+jclass avpriv_jni_find_application_class(JNIEnv *env, const char *name, void *log_ctx)
+{
+    jobject ret;
+    jobject tmp;
+
+    if (!application_class_loader || !find_class_id) {
+        av_log(log_ctx, AV_LOG_ERROR, "No application class loader has been registered\n");
+        return NULL;
+    }
+
+    tmp = avpriv_jni_utf_chars_to_jstring(env, name, log_ctx);
+    if (!tmp) {
+        return NULL;
+    }
+
+    ret = (*env)->CallObjectMethod(env, application_class_loader, find_class_id, tmp);
+    if (avpriv_jni_exception_check(env, 1, log_ctx) < 0) {
+        ret = NULL;
+    }
+
+    (*env)->DeleteLocalRef(env, tmp);
+
+    return ret;
 }

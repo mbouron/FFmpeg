@@ -39,4 +39,33 @@ void av_jni_register_java_vm(JavaVM *vm);
  */
 JavaVM *av_jni_get_java_vm(void);
 
+#ifdef __ANDROID__
+/*
+ * Register an Android application context that will be used later on
+ * to load application classes.
+ *
+ * @param env JNI environment
+ * @param context application context
+ * @return 0 on success, a negative number otherwise
+ */
+int av_jni_register_application_context(JNIEnv *env, jobject context);
+
+/*
+ * Get the registered android application context.
+ *
+ * @return the registered android application context
+ */
+jobject av_jni_get_application_context(void);
+
+/*
+ * Unregister the previously registered Android application context
+ * and delete the global reference associated with it.
+ *
+ * @param env JNI environment
+ * @return 0 on success, a negative number otherwise
+ *
+ */
+int av_jni_unregister_application_context(JNIEnv *env);
+#endif
+
 #endif /* AVUTIL_JNI_H */

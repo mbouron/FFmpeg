@@ -144,4 +144,15 @@ int avpriv_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField 
  */
 int avpriv_jni_reset_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfields_mapping, int global, void *log_ctx);
 
+/*
+ * Find an application class using the registered Android application context.
+ *
+ * @param env JNI environment
+ * @param name class name (for example: java/lang/String)
+ * @param log_ctx context used for logging, can be NULL
+ * @return a local reference to a class object corresponding the provided
+ * name, or NULL if the class cannot be found
+ */
+jclass avpriv_jni_find_application_class(JNIEnv *env, const char *name, void *log_ctx);
+
 #endif /* AVUTIL_JNI_INTERNAL_H */
