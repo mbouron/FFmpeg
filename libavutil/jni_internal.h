@@ -91,6 +91,7 @@ int avpriv_jni_exception_check(JNIEnv *env, int log, void *log_ctx);
 enum FFJniFieldType {
 
     FF_JNI_CLASS,
+    FF_JNI_APPLICATION_CLASS,
     FF_JNI_FIELD,
     FF_JNI_STATIC_FIELD,
     FF_JNI_METHOD,

@@ -276,14 +276,31 @@ int avpriv_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField 
         int mandatory = jfields_mapping[i].mandatory;
         enum FFJniFieldType type = jfields_mapping[i].type;
 
-        if (type == FF_JNI_CLASS) {
+        if (type == FF_JNI_CLASS || type == FF_JNI_APPLICATION_CLASS) {
             jclass clazz;
 
             last_clazz = NULL;
 
-            clazz = (*env)->FindClass(env, jfields_mapping[i].name);
-            if ((ret = avpriv_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
-                goto done;
+            if  (application_class_loader && type == FF_JNI_APPLICATION_CLASS) {
+
+                jobject tmp = avpriv_jni_utf_chars_to_jstring(env, jfields_mapping[i].name, log_ctx);
+                if (!tmp) {
+                    ret = AVERROR_EXTERNAL;
+                    goto done;
+                }
+
+                clazz = (*env)->CallObjectMethod(env, application_class_loader, find_class_id, tmp);
+                if ((ret = avpriv_jni_exception_check(env, 1, log_ctx)) < 0 && mandatory) {
+                    goto done;
+                }
+
+                (*env)->DeleteLocalRef(env, tmp);
+
+            } else {
+                clazz = (*env)->FindClass(env, jfields_mapping[i].name);
+                if ((ret = avpriv_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
+                    goto done;
+                }
             }
 
             last_clazz = *(jclass*)((uint8_t*)jfields + jfields_mapping[i].offset) =
