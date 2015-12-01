@@ -20,6 +20,8 @@ HEADERS = avcodec.h                                                     \
           vorbis_parser.h                                               \
           xvmc.h                                                        \
 
+HEADERS-$(CONFIG_EXIF) = exif_utils.h
+
 OBJS = allcodecs.o                                                      \
        audioconvert.o                                                   \
        avdct.o                                                          \

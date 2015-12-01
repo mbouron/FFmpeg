@@ -26,6 +26,7 @@
  */
 
 #include "exif.h"
+#include "exif_utils.h"
 
 
 static const char *exif_get_tag_name(uint16_t id)
@@ -139,4 +140,31 @@ int avpriv_exif_decode_ifd(void *logctx, GetByteContext *gbytes, int le,
 
     // return next IDF offset or 0x000000000 or a value < 0 for failure
     return ff_tget_long(gbytes, le);
+}
+
+
+int av_exif_parse(const uint8_t *data, int size, AVDictionary **metadata, void *log_ctx)
+{
+    int ret, le, ifd_offset;
+    GetByteContext gbytes;
+
+    bytestream2_init(&gbytes, data, size);
+
+    ret = ff_tdecode_header(&gbytes, &le, &ifd_offset);
+    if (ret < 0) {
+        av_log(log_ctx, AV_LOG_ERROR, "Invalid TIFF header in Exif data\n");
+        return ret;
+    }
+
+    bytestream2_seek(&gbytes, ifd_offset, SEEK_SET);
+
+    // read 0th IFD and store the metadata
+    // (return values > 0 indicate the presence of subimage metadata)
+    ret = avpriv_exif_decode_ifd(log_ctx, &gbytes, le, 0, metadata);
+    if (ret < 0) {
+        av_log(log_ctx, AV_LOG_ERROR, "Error decoding Exif data\n");
+        return ret;
+    }
+
+    return bytestream2_tell(&gbytes);
 }
