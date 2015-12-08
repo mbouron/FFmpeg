@@ -710,4 +710,30 @@ const char *av_frame_side_data_name(enum AVFrameSideDataType type);
  * @}
  */
 
+typedef struct AVVideoFramePool {
+
+    int width;
+    int height;
+    int format;
+    int align;
+    int linesize[4];
+    AVBufferPool *pools[4];
+
+} AVVideoFramePool;
+
+/**
+ * Create a video frame pool according to width, height, format and alignement.
+ */
+AVVideoFramePool *av_video_frame_pool_init(int width, int height, enum AVPixelFormat format, int align);
+
+/**
+ * Release a video frame pool.
+ */
+void av_video_frame_pool_uninit(AVVideoFramePool **pool);
+
+/**
+ * Get a video frame out of a video frame pool.
+ */
+AVFrame *av_video_frame_pool_get(AVVideoFramePool *pool);
+
 #endif /* AVUTIL_FRAME_H */

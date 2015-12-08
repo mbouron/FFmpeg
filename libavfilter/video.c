@@ -42,21 +42,20 @@ AVFrame *ff_null_get_video_buffer(AVFilterLink *link, int w, int h)
  * alloc & free cycle currently implemented. */
 AVFrame *ff_default_get_video_buffer(AVFilterLink *link, int w, int h)
 {
-    AVFrame *frame = av_frame_alloc();
-    int ret;
+    AVVideoFramePool *pool = link->pool;
 
-    if (!frame)
-        return NULL;
+    if (!pool ||
+        pool->width != w ||
+        pool->height != h ||
+        pool->format != link->format) {
+        av_video_frame_pool_uninit(&link->pool);
 
-    frame->width  = w;
-    frame->height = h;
-    frame->format = link->format;
+        link->pool = av_video_frame_pool_init(w, h, link->format, 32);
+        if (!link->pool)
+            return NULL;
+    }
 
-    ret = av_frame_get_buffer(frame, 32);
-    if (ret < 0)
-        av_frame_free(&frame);
-
-    return frame;
+    return av_video_frame_pool_get(link->pool);
 }
 
 AVFrame *ff_get_video_buffer(AVFilterLink *link, int w, int h)

@@ -25,6 +25,7 @@
 #include "frame.h"
 #include "imgutils.h"
 #include "mem.h"
+#include "pixfmt.h"
 #include "samplefmt.h"
 
 MAKE_ACCESSORS(AVFrame, frame, int64_t, best_effort_timestamp)
@@ -731,4 +732,112 @@ const char *av_frame_side_data_name(enum AVFrameSideDataType type)
     case AV_FRAME_DATA_MOTION_VECTORS:  return "Motion vectors";
     }
     return NULL;
+}
+
+AVVideoFramePool *av_video_frame_pool_init(int width, int height, enum AVPixelFormat format, int align)
+{
+    int i, ret;
+    AVVideoFramePool *pool;
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(format);
+
+    if (!desc)
+        return NULL;
+
+    pool = av_mallocz(sizeof(AVVideoFramePool));
+    if (!pool)
+        return NULL;
+
+    pool->width = width;
+    pool->height = height;
+    pool->format = format;
+    pool->align = align;
+
+    if ((ret = av_image_check_size(width, height, 0, NULL)) < 0) {
+        goto fail;
+    }
+
+    if (!pool->linesize[0]) {
+        for(i = 1; i <= align; i += i) {
+            ret = av_image_fill_linesizes(pool->linesize, pool->format, FFALIGN(pool->width, i));
+            if (ret < 0) {
+                goto fail;
+            }
+            if (!(pool->linesize[0] & (pool->align - 1)))
+                break;
+        }
+
+        for (i = 0; i < 4 && pool->linesize[i]; i++) {
+            pool->linesize[i] = FFALIGN(pool->linesize[i], pool->align);
+        }
+    }
+
+    for (i = 0; i < 4 && pool->linesize[i]; i++) {
+        int h = FFALIGN(pool->height, 32);
+        if (i == 1 || i == 2)
+            h = FF_CEIL_RSHIFT(h, desc->log2_chroma_h);
+
+        pool->pools[i] = av_buffer_pool_init(pool->linesize[i] * h + 16 + 16 - 1, av_buffer_allocz);
+        if (!pool->pools[i])
+            goto fail;
+    }
+
+    if (desc->flags & AV_PIX_FMT_FLAG_PAL || desc->flags & AV_PIX_FMT_FLAG_PSEUDOPAL) {
+        pool->pools[1] = av_buffer_pool_init(AVPALETTE_SIZE, av_buffer_allocz);
+        if (!pool->pools[1])
+            goto fail;
+    }
+
+    return pool;
+
+fail:
+    av_video_frame_pool_uninit(&pool);
+    return NULL;
+}
+
+AVFrame *av_video_frame_pool_get(AVVideoFramePool *pool)
+{
+    int i;
+    AVFrame *frame;
+
+    frame = av_frame_alloc();
+
+    frame->width = pool->width;
+    frame->height = pool->height;
+    frame->format = pool->format;
+
+    for (i = 0; i < 4; i++) {
+        frame->linesize[i] = pool->linesize[i];
+        if (!pool->pools[i])
+            break;
+
+        frame->buf[i] = av_buffer_pool_get(pool->pools[i]);
+        if (!frame->buf[i])
+            goto fail;
+
+        frame->data[i] = frame->buf[i]->data;
+    }
+
+    if (frame->data[1] && !frame->data[2])
+        avpriv_set_systematic_pal2((uint32_t *)frame->data[1], pool->format);
+
+    frame->extended_data = frame->data;
+
+    return frame;
+fail:
+    av_frame_free(&frame);
+    return NULL;
+}
+
+void av_video_frame_pool_uninit(AVVideoFramePool **pool)
+{
+    int i;
+
+    if (!pool || !*pool)
+        return;
+
+    for (i = 0; i < 4; i++) {
+        av_buffer_pool_uninit(&(*pool)->pools[i]);
+    }
+
+    av_freep(pool);
 }

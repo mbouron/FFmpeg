@@ -168,6 +168,7 @@ void avfilter_link_free(AVFilterLink **link)
         return;
 
     av_frame_free(&(*link)->partial_buf);
+    av_video_frame_pool_uninit(&(*link)->pool);
 
     av_freep(link);
 }
