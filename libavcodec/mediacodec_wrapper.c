@@ -538,10 +538,6 @@ fail:
     return ret;
 }
 
-/**
- * The returned data is owned by the format and remains valid as long as the named entry
- * is part of the format.
- */
 int ff_AMediaFormat_getBuffer(FFAMediaFormat* format, const char *name, void** data, size_t *size)
 {
     int ret = 1;
@@ -595,10 +591,7 @@ fail:
 
     return ret;
 }
-/**
- * The returned string is owned by the format, and remains valid until the next call to getString,
- * or until the format is deleted.
- */
+
 int ff_AMediaFormat_getString(FFAMediaFormat* format, const char *name, const char **out)
 {
     int ret = 1;
@@ -730,9 +723,6 @@ fail:
     JNI_DETACH_ENV(attached, NULL);
 }
 
-/**
- * The provided string is copied into the format.
- */
 void ff_AMediaFormat_setString(FFAMediaFormat* format, const char* name, const char* value)
 {
     int attached = 0;
@@ -770,9 +760,7 @@ fail:
 
     JNI_DETACH_ENV(attached, NULL);
 }
-/**
- * The provided data is copied into the format.
- */
+
 void ff_AMediaFormat_setBuffer(FFAMediaFormat* format, const char* name, void* data, size_t size)
 {
     int attached = 0;
