@@ -67,22 +67,22 @@ static const struct FFJniField jfields_mapping[] = {
 };
 
 #define JNI_ATTACH_ENV_OR_RETURN(env, attached, log_ctx, ret) do { \
-    (env) = avpriv_jni_attach_env(attached, log_ctx);          \
-    if (!(env)) {                                              \
-        return ret;                                            \
-    }                                                          \
+    (env) = avpriv_jni_attach_env(attached, log_ctx);              \
+    if (!(env)) {                                                  \
+        return ret;                                                \
+    }                                                              \
 } while (0)
 
-#define JNI_ATTACH_ENV_OR_RETURN_VOID(env, attached, log_ctx) do {      \
-    (env) = avpriv_jni_attach_env(attached, log_ctx);                   \
-    if (!(env)) {                                                       \
-        return;                                                         \
-    }                                                                   \
+#define JNI_ATTACH_ENV_OR_RETURN_VOID(env, attached, log_ctx) do { \
+    (env) = avpriv_jni_attach_env(attached, log_ctx);              \
+    if (!(env)) {                                                  \
+        return;                                                    \
+    }                                                              \
 } while (0)
 
 #define JNI_DETACH_ENV(attached, log_ctx) do { \
-    if (attached)                          \
-        avpriv_jni_detach_env(log_ctx);    \
+    if (attached)                              \
+        avpriv_jni_detach_env(log_ctx);        \
 } while (0)
 
 char *ff_AMediaCodecList_getCodecNameByType(const char *mime, int width, int height)
