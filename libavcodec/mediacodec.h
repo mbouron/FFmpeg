@@ -98,4 +98,17 @@ int av_mediacodec_release_buffer(AVMediaCodecBuffer *buffer, int render);
  */
 int av_mediacodec_render_buffer_at_time(AVMediaCodecBuffer *buffer, int64_t time);
 
+typedef struct AndroidSurface AVAndroidSurface;
+
+AVAndroidSurface *av_android_surface_new(void* listener, int tex_id);
+void av_android_surface_free(AVAndroidSurface **surface);
+
+void *av_android_surface_get_surface(AVAndroidSurface *surface);
+
+int av_android_surface_attach_to_gl_context(AVAndroidSurface *surface, int tex_id);
+int av_android_surface_detach_from_gl_context(AVAndroidSurface *surface);
+
+int av_android_surface_render_buffer(AVAndroidSurface *surface, AVMediaCodecBuffer *buffer, float *matrix);
+void av_android_surface_signal_frame(AVAndroidSurface *surface);
+
 #endif /* AVCODEC_MEDIACODEC_H */
