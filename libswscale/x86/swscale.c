@@ -222,9 +222,9 @@ static void yuv2yuvX_sse3(const int16_t *filter, int filterSize,
         "movl           %3, %%ecx  \n\t" \
         "mov                                 %0, %%"FF_REG_d"        \n\t"\
         "mov                        (%%"FF_REG_d"), %%"FF_REG_S"     \n\t"\
-        ".p2align                             4               \n\t" /* FIXME Unroll? */\
-        "1:                                                   \n\t"\
-        "movddup                  8(%%"FF_REG_d"), %%xmm0     \n\t" /* filterCoeff */\
+        ".p2align                             4             \n\t" /* FIXME Unroll? */\
+        "1:                                                 \n\t"\
+        "movddup                  8(%%"FF_REG_d"), %%xmm0   \n\t" /* filterCoeff */\
         "movdqa              (%%"FF_REG_S", %%"FF_REG_c", 2), %%xmm2 \n\t" /* srcData */\
         "movdqa            16(%%"FF_REG_S", %%"FF_REG_c", 2), %%xmm5 \n\t" /* srcData */\
         "add                                $16, %%"FF_REG_d"        \n\t"\
@@ -239,13 +239,13 @@ static void yuv2yuvX_sse3(const int16_t *filter, int filterSize,
         "psraw                               $3, %%xmm4      \n\t"\
         "packuswb                         %%xmm4, %%xmm3      \n\t"\
         "movntdq                          %%xmm3, (%1, %%"FF_REG_c") \n\t"\
-        "add                         $16, %%"FF_REG_c"               \n\t"\
-        "cmp                          %2, %%"FF_REG_c"               \n\t"\
-        "movdqa                   %%xmm7, %%xmm3              \n\t"\
-        "movdqa                   %%xmm7, %%xmm4              \n\t"\
+        "add                         $16, %%"FF_REG_c"        \n\t"\
+        "cmp                          %2, %%"FF_REG_c"        \n\t"\
+        "movdqa                   %%xmm7, %%xmm3            \n\t" \
+        "movdqa                   %%xmm7, %%xmm4            \n\t" \
         "mov                                 %0, %%"FF_REG_d"        \n\t"\
         "mov                        (%%"FF_REG_d"), %%"FF_REG_S"     \n\t"\
-        "jb                                  1b               \n\t"
+        "jb                                  1b             \n\t"
 
     if (offset) {
         __asm__ volatile(

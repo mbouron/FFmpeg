@@ -122,47 +122,47 @@ static void RENAME(yuv2yuvX)(const int16_t *filter, int filterSize,
 
 #define YSCALEYUV2PACKEDX_UV \
     __asm__ volatile(\
-        "xor                   %%"FF_REG_a", %%"FF_REG_a" \n\t"\
-        ".p2align                      4                  \n\t"\
-        "nop                                              \n\t"\
-        "1:                                               \n\t"\
-        "lea "CHR_MMX_FILTER_OFFSET"(%0), %%"FF_REG_d"    \n\t"\
-        "mov                 (%%"FF_REG_d"), %%"FF_REG_S" \n\t"\
-        "movq      "VROUNDER_OFFSET"(%0), %%mm3           \n\t"\
-        "movq                      %%mm3, %%mm4           \n\t"\
-        ".p2align                      4                  \n\t"\
-        "2:                                               \n\t"\
-        "movq               8(%%"FF_REG_d"), %%mm0        \n\t" /* filterCoeff */\
-        "movq     (%%"FF_REG_S", %%"FF_REG_a"), %%mm2     \n\t" /* UsrcData */\
-        "add                          %6, %%"FF_REG_S"    \n\t" \
-        "movq     (%%"FF_REG_S", %%"FF_REG_a"), %%mm5     \n\t" /* VsrcData */\
-        "add                         $16, %%"FF_REG_d"    \n\t"\
-        "mov                 (%%"FF_REG_d"), %%"FF_REG_S" \n\t"\
-        "pmulhw                    %%mm0, %%mm2           \n\t"\
-        "pmulhw                    %%mm0, %%mm5           \n\t"\
-        "paddw                     %%mm2, %%mm3           \n\t"\
-        "paddw                     %%mm5, %%mm4           \n\t"\
-        "test                  %%"FF_REG_S", %%"FF_REG_S" \n\t"\
-        " jnz                         2b                  \n\t"\
+        "xor                %%"FF_REG_a", %%"FF_REG_a"  \n\t"\
+        ".p2align                      4                \n\t"\
+        "nop                                            \n\t"\
+        "1:                                             \n\t"\
+        "lea "CHR_MMX_FILTER_OFFSET"(%0), %%"FF_REG_d"  \n\t"\
+        "mov                 (%%"REG_d"), %%"FF_REG_S"  \n\t"\
+        "movq      "VROUNDER_OFFSET"(%0), %%mm3         \n\t"\
+        "movq                      %%mm3, %%mm4         \n\t"\
+        ".p2align                      4                \n\t"\
+        "2:                                             \n\t"\
+        "movq            8(%%"FF_REG_d"), %%mm0         \n\t" /* filterCoeff */\
+        "movq  (%%"FF_REG_S", %%"FF_REG_a"), %%mm2      \n\t" /* UsrcData */\
+        "add                          %6, %%"FF_REG_S"  \n\t" \
+        "movq  (%%"FF_REG_S", %%"FF_REG_a"), %%mm5      \n\t" /* VsrcData */\
+        "add                         $16, %%"FF_REG_d"  \n\t"\
+        "mov              (%%"FF_REG_d"), %%"FF_REG_S"  \n\t"\
+        "pmulhw                    %%mm0, %%mm2         \n\t"\
+        "pmulhw                    %%mm0, %%mm5         \n\t"\
+        "paddw                     %%mm2, %%mm3         \n\t"\
+        "paddw                     %%mm5, %%mm4         \n\t"\
+        "test               %%"FF_REG_S", %%"FF_REG_S"  \n\t"\
+        " jnz                         2b                \n\t"\
 
 #define YSCALEYUV2PACKEDX_YA(offset,coeff,src1,src2,dst1,dst2) \
-    "lea                "offset"(%0), %%"FF_REG_d"        \n\t"\
-    "mov                 (%%"FF_REG_d"), %%"FF_REG_S"     \n\t"\
+    "lea                "offset"(%0), %%"FF_REG_d"  \n\t"\
+    "mov              (%%"FF_REG_d"), %%"FF_REG_S"  \n\t"\
     "movq      "VROUNDER_OFFSET"(%0), "#dst1"       \n\t"\
     "movq                    "#dst1", "#dst2"       \n\t"\
     ".p2align                      4                \n\t"\
     "2:                                             \n\t"\
-    "movq               8(%%"FF_REG_d"), "#coeff"         \n\t" /* filterCoeff */\
-    "movq  (%%"FF_REG_S", %%"FF_REG_a", 2), "#src1"       \n\t" /* Y1srcData */\
-    "movq 8(%%"FF_REG_S", %%"FF_REG_a", 2), "#src2"       \n\t" /* Y2srcData */\
-    "add                         $16, %%"FF_REG_d"        \n\t"\
-    "mov                 (%%"FF_REG_d"), %%"FF_REG_S"     \n\t"\
+    "movq            8(%%"FF_REG_d"), "#coeff"      \n\t" /* filterCoeff */\
+    "movq  (%%"FF_REG_S", %%"FF_REG_a", 2), "#src1" \n\t" /* Y1srcData */\
+    "movq 8(%%"FF_REG_S", %%"FF_REG_a", 2), "#src2" \n\t" /* Y2srcData */\
+    "add                         $16, %%"FF_REG_d"  \n\t"\
+    "mov              (%%"FF_REG_d"), %%"FF_REG_S"  \n\t"\
     "pmulhw                 "#coeff", "#src1"       \n\t"\
     "pmulhw                 "#coeff", "#src2"       \n\t"\
     "paddw                   "#src1", "#dst1"       \n\t"\
     "paddw                   "#src2", "#dst2"       \n\t"\
-    "test                  %%"FF_REG_S", %%"FF_REG_S"     \n\t"\
-    " jnz                         2b                      \n\t"\
+    "test               %%"FF_REG_S", %%"FF_REG_S"  \n\t"\
+    " jnz                         2b                \n\t"\
 
 #define YSCALEYUV2PACKEDX \
     YSCALEYUV2PACKEDX_UV \
@@ -183,18 +183,18 @@ static void RENAME(yuv2yuvX)(const int16_t *filter, int filterSize,
         "nop                                            \n\t"\
         "1:                                             \n\t"\
         "lea "CHR_MMX_FILTER_OFFSET"(%0), %%"FF_REG_d"  \n\t"\
-        "mov                 (%%"FF_REG_d"), %%"FF_REG_S" \n\t"\
+        "mov              (%%"FF_REG_d"), %%"FF_REG_S"  \n\t"\
         "pxor                      %%mm4, %%mm4         \n\t"\
         "pxor                      %%mm5, %%mm5         \n\t"\
         "pxor                      %%mm6, %%mm6         \n\t"\
         "pxor                      %%mm7, %%mm7         \n\t"\
         ".p2align                      4                \n\t"\
         "2:                                             \n\t"\
-        "movq     (%%"FF_REG_S", %%"FF_REG_a"), %%mm0   \n\t" /* UsrcData */\
+        "movq  (%%"FF_REG_S", %%"FF_REG_a"), %%mm0      \n\t" /* UsrcData */\
         "add                          %6, %%"FF_REG_S"  \n\t" \
-        "movq     (%%"FF_REG_S", %%"FF_REG_a"), %%mm2   \n\t" /* VsrcData */\
+        "movq  (%%"FF_REG_S", %%"FF_REG_a"), %%mm2      \n\t" /* VsrcData */\
         "mov "STR(APCK_PTR2)"(%%"FF_REG_d"), %%"FF_REG_S" \n\t"\
-        "movq     (%%"FF_REG_S", %%"FF_REG_a"), %%mm1     \n\t" /* UsrcData */\
+        "movq  (%%"FF_REG_S", %%"FF_REG_a"), %%mm1      \n\t" /* UsrcData */\
         "movq                      %%mm0, %%mm3         \n\t"\
         "punpcklwd                 %%mm1, %%mm0         \n\t"\
         "punpckhwd                 %%mm1, %%mm3         \n\t"\
@@ -204,10 +204,10 @@ static void RENAME(yuv2yuvX)(const int16_t *filter, int filterSize,
         "paddd                     %%mm0, %%mm4         \n\t"\
         "paddd                     %%mm3, %%mm5         \n\t"\
         "add                          %6, %%"FF_REG_S"  \n\t" \
-        "movq     (%%"FF_REG_S", %%"FF_REG_a"), %%mm3   \n\t" /* VsrcData */\
+        "movq  (%%"FF_REG_S", %%"FF_REG_a"), %%mm3      \n\t" /* VsrcData */\
         "mov "STR(APCK_SIZE)"(%%"FF_REG_d"), %%"FF_REG_S" \n\t"\
-        "add           $"STR(APCK_SIZE)", %%"FF_REG_d"    \n\t"\
-        "test                  %%"FF_REG_S", %%"FF_REG_S" \n\t"\
+        "add           $"STR(APCK_SIZE)", %%"FF_REG_d"  \n\t"\
+        "test               %%"FF_REG_S", %%"FF_REG_S"  \n\t"\
         "movq                      %%mm2, %%mm0         \n\t"\
         "punpcklwd                 %%mm3, %%mm2         \n\t"\
         "punpckhwd                 %%mm3, %%mm0         \n\t"\
@@ -249,10 +249,10 @@ static void RENAME(yuv2yuvX)(const int16_t *filter, int filterSize,
     "pmaddwd                   %%mm4, %%mm3         \n\t"\
     "paddd                     %%mm0, %%mm1         \n\t"\
     "paddd                     %%mm3, %%mm5         \n\t"\
-    "movq 8(%%"FF_REG_S", %%"FF_REG_a", 2), %%mm3       \n\t" /* Y2srcData */\
-    "mov "STR(APCK_SIZE)"(%%"FF_REG_d"), %%"FF_REG_S"   \n\t"\
-    "add           $"STR(APCK_SIZE)", %%"FF_REG_d"      \n\t"\
-    "test                  %%"FF_REG_S", %%"FF_REG_S"   \n\t"\
+    "movq 8(%%"FF_REG_S", %%"FF_REG_a", 2), %%mm3   \n\t" /* Y2srcData */\
+    "mov "STR(APCK_SIZE)"(%%"FF_REG_d"), %%"FF_REG_S" \n\t"\
+    "add           $"STR(APCK_SIZE)", %%"FF_REG_d"  \n\t"\
+    "test               %%"FF_REG_S", %%"FF_REG_S"  \n\t"\
     "movq                      %%mm2, %%mm0         \n\t"\
     "punpcklwd                 %%mm3, %%mm2         \n\t"\
     "punpckhwd                 %%mm3, %%mm0         \n\t"\
