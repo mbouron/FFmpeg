@@ -1354,7 +1354,7 @@ int ff_AMediaCodec_configure(FFAMediaCodec* codec, const FFAMediaFormat* format,
 
     JNI_GET_ENV_OR_RETURN(env, codec, AVERROR_EXTERNAL);
 
-    (*env)->CallVoidMethod(env, codec->object, codec->jfields.configure_id, format->object, surface, NULL, flags);
+    (*env)->CallVoidMethod(env, codec->object, codec->jfields.configure_id, format->object, surface, crypto, flags);
     if (ff_jni_exception_check(env, 1, codec) < 0) {
         ret = AVERROR_EXTERNAL;
         goto fail;
