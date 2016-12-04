@@ -37,6 +37,11 @@ typedef struct AVMediaCodecContext {
      */
     void *surface;
 
+    /**
+     * android/media/MediaCrypto object reference.
+     */
+    void *crypto;
+
 } AVMediaCodecContext;
 
 /**
@@ -58,6 +63,17 @@ AVMediaCodecContext *av_mediacodec_alloc_context(void);
  * @return 0 on success, < 0 otherwise
  */
 int av_mediacodec_default_init(AVCodecContext *avctx, AVMediaCodecContext *ctx, void *surface);
+
+/**
+ * Convenience function that sets up the MediaCodec context.
+ *
+ * @param avctx codec context
+ * @param ctx MediaCodec context to initialize
+ * @param surface reference to an android/view/Surface object
+ * @param crypto reference to an android/media/MediaCrypto object, can be NULL
+ * @return 0 on success, < 0 otherwise
+ */
+int av_mediacodec_default_init2(AVCodecContext *avctx, AVMediaCodecContext *ctx, void *surface, void *crypto);
 
 /**
  * This function must be called to free the MediaCodec context initialized with

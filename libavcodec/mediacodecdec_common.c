@@ -35,6 +35,7 @@
 #include "internal.h"
 
 #include "mediacodec.h"
+#include "mediacodec_crypto.h"
 #include "mediacodec_surface.h"
 #include "mediacodec_sw_buffer.h"
 #include "mediacodec_wrapper.h"
@@ -165,6 +166,11 @@ static void ff_mediacodec_dec_unref(MediaCodecDecContext *s)
         if (s->surface) {
             ff_mediacodec_surface_unref(s->surface, NULL);
             s->surface = NULL;
+        }
+
+        if (s->crypto) {
+            ff_mediacodec_crypto_unref(s->crypto, NULL);
+            s->crypto = NULL;
         }
 
         av_freep(&s->codec_name);
@@ -474,6 +480,11 @@ int ff_mediacodec_dec_init(AVCodecContext *avctx, MediaCodecDecContext *s,
         if (user_ctx && user_ctx->surface) {
             s->surface = ff_mediacodec_surface_ref(user_ctx->surface, avctx);
             av_log(avctx, AV_LOG_INFO, "Using surface %p\n", s->surface);
+
+            if (user_ctx->crypto) {
+                s->crypto = ff_mediacodec_crypto_ref(user_ctx->crypto, avctx);
+                av_log(avctx, AV_LOG_INFO, "Using crypto %p\n", s->crypto);
+            }
         }
     }
 
@@ -496,7 +507,7 @@ int ff_mediacodec_dec_init(AVCodecContext *avctx, MediaCodecDecContext *s,
         goto fail;
     }
 
-    status = ff_AMediaCodec_configure(s->codec, format, s->surface, NULL, 0);
+    status = ff_AMediaCodec_configure(s->codec, format, s->surface, s->crypto, 0);
     if (status < 0) {
         char *desc = ff_AMediaFormat_toString(format);
         av_log(avctx, AV_LOG_ERROR,

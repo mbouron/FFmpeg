@@ -43,7 +43,7 @@ AVMediaCodecContext *av_mediacodec_alloc_context(void)
     return av_mallocz(sizeof(AVMediaCodecContext));
 }
 
-int av_mediacodec_default_init(AVCodecContext *avctx, AVMediaCodecContext *ctx, void *surface)
+static int default_init(AVCodecContext *avctx, AVMediaCodecContext *ctx, void *surface, void *crypto)
 {
     int ret = 0;
     JNIEnv *env = NULL;
@@ -54,14 +54,34 @@ int av_mediacodec_default_init(AVCodecContext *avctx, AVMediaCodecContext *ctx, 
     }
 
     ctx->surface = (*env)->NewGlobalRef(env, surface);
-    if (ctx->surface) {
-        avctx->hwaccel_context = ctx;
-    } else {
-        av_log(avctx, AV_LOG_ERROR, "Could not create new global reference\n");
+    if (!ctx->surface) {
+        av_log(avctx, AV_LOG_ERROR, "Could not create new surface global reference\n");
         ret = AVERROR_EXTERNAL;
+        goto end;
     }
 
+    if (crypto) {
+        ctx->crypto = (*env)->NewGlobalRef(env, crypto);
+        if (!ctx->crypto) {
+            av_log(avctx, AV_LOG_ERROR, "Could not create new crypto global reference\n");
+            ret = AVERROR_EXTERNAL;
+            goto end;
+        }
+    }
+    avctx->hwaccel_context = ctx;
+
+end:
     return ret;
+}
+
+int av_mediacodec_default_init(AVCodecContext *avctx, AVMediaCodecContext *ctx, void *surface)
+{
+    return default_init(avctx, ctx, surface, NULL);
+}
+
+int av_mediacodec_default_init2(AVCodecContext *avctx, AVMediaCodecContext *ctx, void *surface, void *crypto)
+{
+    return default_init(avctx, ctx, surface, crypto);
 }
 
 void av_mediacodec_default_free(AVCodecContext *avctx)
