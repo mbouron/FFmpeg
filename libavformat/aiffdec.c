@@ -81,11 +81,10 @@ static void get_meta(AVFormatContext *s, const char *key, int size)
             av_free(str);
             return;
         }
-        size += (size&1)-res;
+        size -= res;
         str[res] = 0;
         av_dict_set(&s->metadata, key, str, AV_DICT_DONT_STRDUP_VAL);
-    }else
-        size+= size&1;
+    }
 
     avio_skip(s->pb, size);
 }
@@ -102,8 +101,6 @@ static int get_aiff_header(AVFormatContext *s, int size,
     int sample_rate;
     unsigned int num_frames;
 
-    if (size & 1)
-        size++;
     par->codec_type = AVMEDIA_TYPE_AUDIO;
     par->channels = avio_rb16(pb);
     num_frames = avio_rb32(pb);
@@ -330,9 +327,13 @@ static int aiff_read_header(AVFormatContext *s)
             if (offset > 0 && st->codecpar->block_align) // COMM && SSND
                 goto got_sound;
         default: /* Jump */
-            if (size & 1)   /* Always even aligned */
-                size++;
             avio_skip(pb, size);
+        }
+
+        /* Skip required padding byte for odd-sized chunks. */
+        if (size & 1) {
+            filesize--;
+            avio_skip(pb, 1);
         }
     }
 
