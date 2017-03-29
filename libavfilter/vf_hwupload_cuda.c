@@ -113,7 +113,7 @@ static int cudaupload_config_output(AVFilterLink *outlink)
 static int cudaupload_filter_frame(AVFilterLink *link, AVFrame *in)
 {
     AVFilterContext   *ctx = link->dst;
-    CudaUploadContext   *s = ctx->priv;
+    AVFilterLink  *outlink = ctx->outputs[0];
 
     AVFrame *out = NULL;
     int ret;
@@ -187,4 +187,6 @@ AVFilter ff_vf_hwupload_cuda = {
 
     .inputs    = cudaupload_inputs,
     .outputs   = cudaupload_outputs,
+
+    .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };
