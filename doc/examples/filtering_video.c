@@ -211,6 +211,7 @@ int main(int argc, char **argv)
 {
     int ret;
     AVPacket packet;
+    int keep_packet = 0;
     AVFrame *frame = av_frame_alloc();
     AVFrame *filt_frame = av_frame_alloc();
     int got_frame;
@@ -234,14 +235,30 @@ int main(int argc, char **argv)
 
     /* read all packets */
     while (1) {
-        if ((ret = av_read_frame(fmt_ctx, &packet)) < 0)
-            break;
+        if (!keep_packet) {
+            if ((ret = av_read_frame(fmt_ctx, &packet)) < 0)
+                break;
+            keep_packet = 1;
+        }
 
         if (packet.stream_index == video_stream_index) {
             got_frame = 0;
-            ret = avcodec_decode_video2(dec_ctx, frame, &got_frame, &packet);
-            if (ret < 0) {
-                av_log(NULL, AV_LOG_ERROR, "Error decoding video\n");
+
+            ret = avcodec_send_packet(dec_ctx, &packet);
+            if (ret >= 0) {
+                keep_packet = 0;
+            } else if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
+                av_log(NULL, AV_LOG_ERROR, "Error while sending a packet to the decoder\n");
+                break;
+            }
+
+            ret = avcodec_receive_frame(dec_ctx, frame);
+            if (ret >= 0) {
+                got_frame = 1;
+            } else if (ret == AVERROR_EOF) {
+                break;
+            } else if (ret != AVERROR(EAGAIN)) {
+                av_log(NULL, AV_LOG_ERROR, "Error while receiving a frame from the decoder\n");
                 break;
             }
 
@@ -266,8 +283,11 @@ int main(int argc, char **argv)
                 }
                 av_frame_unref(frame);
             }
+        } else {
+            keep_packet = 0;
         }
-        av_packet_unref(&packet);
+        if (!keep_packet)
+           av_packet_unref(&packet);
     }
 end:
     avfilter_graph_free(&filter_graph);
