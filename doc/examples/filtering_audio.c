@@ -216,7 +216,8 @@ static void print_frame(const AVFrame *frame)
 int main(int argc, char **argv)
 {
     int ret;
-    AVPacket packet0, packet;
+    AVPacket packet;
+    int keep_packet = 0;
     AVFrame *frame = av_frame_alloc();
     AVFrame *filt_frame = av_frame_alloc();
     int got_frame;
@@ -239,28 +240,37 @@ int main(int argc, char **argv)
         goto end;
 
     /* read all packets */
-    packet0.data = NULL;
-    packet.data = NULL;
     while (1) {
-        if (!packet0.data) {
+        if (!keep_packet) {
             if ((ret = av_read_frame(fmt_ctx, &packet)) < 0)
                 break;
-            packet0 = packet;
+            keep_packet = 1;
         }
 
         if (packet.stream_index == audio_stream_index) {
             got_frame = 0;
-            ret = avcodec_decode_audio4(dec_ctx, frame, &got_frame, &packet);
-            if (ret < 0) {
-                av_log(NULL, AV_LOG_ERROR, "Error decoding audio\n");
-                continue;
+
+            ret = avcodec_send_packet(dec_ctx, &packet);
+            if (ret >= 0) {
+                keep_packet = 0;
+            } else if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
+                av_log(NULL, AV_LOG_ERROR, "Error while sending a packet to the decoder\n");
+                break;
             }
-            packet.size -= ret;
-            packet.data += ret;
+
+            ret = avcodec_receive_frame(dec_ctx, frame);
+            if (ret >= 0) {
+                got_frame = 1;
+            } else if (ret == AVERROR_EOF) {
+                break;
+            } else if (ret != AVERROR(EAGAIN)) {
+                av_log(NULL, AV_LOG_ERROR, "Error while receiving a frame from the decoder\n");
+                break;
+            }
 
             if (got_frame) {
                 /* push the audio data from decoded frame into the filtergraph */
-                if (av_buffersrc_add_frame_flags(buffersrc_ctx, frame, 0) < 0) {
+                if (av_buffersrc_add_frame_flags(buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
                     av_log(NULL, AV_LOG_ERROR, "Error while feeding the audio filtergraph\n");
                     break;
                 }
@@ -275,14 +285,14 @@ int main(int argc, char **argv)
                     print_frame(filt_frame);
                     av_frame_unref(filt_frame);
                 }
+                av_frame_unref(frame);
             }
-
-            if (packet.size <= 0)
-                av_packet_unref(&packet0);
         } else {
             /* discard non-wanted packets */
-            av_packet_unref(&packet0);
+            keep_packet = 0;
         }
+        if (!keep_packet)
+           av_packet_unref(&packet);
     }
 end:
     avfilter_graph_free(&filter_graph);
