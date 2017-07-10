@@ -127,6 +127,64 @@ typedef struct MOVIndexRange {
     int64_t end;
 } MOVIndexRange;
 
+typedef struct MOVItemInformationEntry {
+    unsigned int version;
+    unsigned int flags;
+    unsigned int item_id;
+    unsigned int item_protection_index;
+    unsigned int item_type;
+    char *item_name;
+    char *content_type;
+    char *content_encoding;
+    char *item_uri_type;
+} MOVItemInformationEntry;
+
+typedef struct MOVItemReference {
+    unsigned int version;
+    unsigned int flags;
+    unsigned int type;
+    unsigned int from_item_id;
+    unsigned int to_item_id_count;
+    unsigned int *to_item_id_data;
+} MOVItemReference;
+
+typedef struct MOVItemExtent {
+    int64_t base_offset;
+    unsigned int extent_index;
+    unsigned int extent_offset;
+    unsigned int extent_length;
+} MOVItemExtent;
+
+typedef struct MOVItemLocation {
+    unsigned int version;
+    unsigned int flags;
+    unsigned int item_id;
+    unsigned int construction_method;
+    unsigned int data_reference_index;
+    unsigned int base_offset;
+    unsigned int extent_count;
+    MOVItemExtent *extent_data;
+} MOVItemLocation;
+
+typedef struct MOVItemProperty {
+    unsigned int type;
+    int64_t size;
+    int64_t offset;
+    uint8_t *data;
+    unsigned data_len;
+} MOVItemProperty;
+
+typedef struct MOVItemPropertyAssociationIndex {
+    unsigned int essential;
+    unsigned int item_index;
+} MOVItemPropertyAssociationIndex;
+
+typedef struct MOVItemPropertyAssociation {
+    unsigned int item_id;
+    unsigned int index_count;
+    MOVItemPropertyAssociationIndex *index_data;
+} MOVItemPropertyAssociation;
+
 typedef struct MOVStreamContext {
     AVIOContext *pb;
     int pb_is_copied;
@@ -213,6 +271,7 @@ typedef struct MOVStreamContext {
         int64_t auxiliary_info_index;
         struct AVAESCTR* aes_ctr;
     } cenc;
+
 } MOVStreamContext;
 
 typedef struct MOVContext {
@@ -223,12 +282,14 @@ typedef struct MOVContext {
     int found_moov;       ///< 'moov' atom has been found
     int found_mdat;       ///< 'mdat' atom has been found
     int found_hdlr_mdta;  ///< 'hdlr' atom with type 'mdta' has been found
+    int found_meta;
     int trak_index;       ///< Index of the current 'trak'
     char **meta_keys;
     unsigned meta_keys_count;
     DVDemuxContext *dv_demux;
     AVFormatContext *dv_fctx;
     int isom;             ///< 1 if file is ISO Media (mp4/3gp)
+    int heif;             ///< 1 if file is HEIF
     MOVFragment fragment; ///< current fragment in moof atom
     MOVTrackExt *trex_data;
     unsigned trex_count;
@@ -265,6 +326,19 @@ typedef struct MOVContext {
     int decryption_key_len;
     int enable_drefs;
     int32_t movie_display_matrix[3][3]; ///< display matrix from mvhd
+    unsigned int pitm;
+    unsigned int infe_count;
+    MOVItemInformationEntry *infe_data;
+    unsigned int iref_count;
+    MOVItemReference *iref_data;
+    uint8_t *idat;
+    unsigned int idat_len;
+    unsigned int iloc_count;
+    MOVItemLocation *iloc_data;
+    unsigned int ip_count;
+    MOVItemProperty *ip_data;
+    unsigned int ipa_count;
+    MOVItemPropertyAssociation *ipa_data;
 } MOVContext;
 
 int ff_mp4_read_descr_len(AVIOContext *pb);

@@ -736,6 +736,9 @@ static int mov_read_hdlr(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         st->codecpar->codec_id = AV_CODEC_ID_MP2;
     else if ((type == MKTAG('s','u','b','p')) || (type == MKTAG('c','l','c','p')))
         st->codecpar->codec_type = AVMEDIA_TYPE_SUBTITLE;
+    else if (type == MKTAG('p','i','c','t')) {
+        st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    }
 
     avio_rb32(pb); /* component  manufacture */
     avio_rb32(pb); /* component flags */
@@ -984,6 +987,385 @@ static int mov_read_pasp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+static int mov_read_pitm(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    int version = avio_r8(pb);
+    avio_rb24(pb);
+
+    if (version > 1) {
+        avpriv_request_sample(c->fc, "Version %d", version);
+        return AVERROR_PATCHWELCOME;
+    }
+
+    if (version == 0) {
+        c->pitm = avio_rb16(pb);
+    } else {
+        c->pitm = avio_rb32(pb);
+    }
+
+    av_log(c->fc, AV_LOG_TRACE, "pitm item_id=%u\n", c->pitm);
+
+    return 0;
+}
+
+static int mov_read_iinf(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    int i;
+    int version = avio_r8(pb);
+    avio_rb24(pb);
+
+    if (version == 0)
+        c->infe_count = avio_rb16(pb);
+    else
+        c->infe_count = avio_rb32(pb);
+
+    c->infe_data = av_mallocz(c->infe_count * sizeof(*c->infe_data));
+    if (!c->infe_data)
+        return AVERROR(ENOMEM);
+
+    for (i = 0; i < c->infe_count; i++) {
+        int64_t size;
+        int32_t type;
+        MOVItemInformationEntry *entry = &c->infe_data[i];
+
+        size = avio_rb32(pb);
+        type = avio_rl32(pb);
+
+        if (type != MKTAG('i', 'n', 'f', 'e')) {
+            return AVERROR_INVALIDDATA;
+        }
+
+        entry->version = avio_r8(pb);
+        entry->flags = avio_rb24(pb);
+
+        if (entry->version != 2) {
+            avpriv_request_sample(c->fc, "Version %d", entry->version);
+            return AVERROR_PATCHWELCOME;
+        }
+
+        if (entry->version == 2)
+            entry->item_id = avio_rb16(pb);
+        else
+            entry->item_id = avio_rb32(pb);
+
+        entry->item_protection_index = avio_rb16(pb);
+        entry->item_type = avio_rl32(pb);
+        size -= 18;
+        if (entry->version == 2)
+            size -= 2;
+        else
+            size -= 4;
+
+        entry->item_name = av_mallocz(size);
+        if (!entry->item_name)
+            return AVERROR(ENOMEM);
+        size -= avio_get_str(pb, size, entry->item_name, size);
+
+        if (entry->item_type == MKTAG('m','i','m','e')) {
+            entry->content_type = av_mallocz(size);
+            if (!entry->content_type)
+                return AVERROR(ENOMEM);
+            size -= avio_get_str(pb, size, entry->content_type, size);
+
+            if (size > 0) {
+                entry->content_encoding = av_mallocz(size);
+                if (!entry->content_encoding)
+                    return AVERROR(ENOMEM);
+                size -= avio_get_str(pb, size, entry->content_encoding, size);
+            }
+        } else if (entry->item_type == MKTAG('u','r','i',' ')) {
+            entry->item_uri_type = av_mallocz(size);
+            if (!entry->item_uri_type)
+                return AVERROR(ENOMEM);
+            size -= avio_get_str(pb, size, entry->item_uri_type, size);
+        }
+    }
+
+    for (i = 0; i < c->infe_count; i++) {
+        MOVItemInformationEntry *entry = &c->infe_data[i];
+
+        av_log(c->fc, AV_LOG_TRACE, "infe version=%d item_id=%u item_type=%s\n",
+               entry->version, entry->item_id, av_fourcc2str(entry->item_type));
+    }
+
+    return 0;
+}
+
+static int mov_read_iref(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    int i;
+    int atom_size = atom.size;
+    int version = avio_r8(pb); /* version */
+    avio_rb24(pb); /* flags */
+    atom_size -= 4;
+
+    if (version > 0) {
+        avpriv_request_sample(c->fc, "Version %d", version);
+        return AVERROR_PATCHWELCOME;
+    }
+
+    if (version == 0) {
+        while (atom_size > 4) {
+            int size = avio_rb32(pb);
+            int box = avio_rl32(pb);
+            MOVItemReference *ref;
+            MOVItemReference *ptr = av_realloc_array(c->iref_data,
+                                                     c->iref_count + 1,
+                                                     sizeof(MOVItemReference));
+            if (!ptr)
+                return AVERROR(ENOMEM);
+
+            c->iref_data = ptr;
+            ref = &c->iref_data[c->iref_count];
+
+            ref->type = box;
+            ref->from_item_id = avio_rb16(pb);
+            ref->to_item_id_count = avio_rb16(pb);
+
+            ref->to_item_id_data = av_mallocz(ref->to_item_id_count * sizeof(*ref->to_item_id_data));
+            if (!ref->to_item_id_data)
+                return AVERROR(ENOMEM);
+
+            for (i = 0; i < ref->to_item_id_count; i++) {
+                ref->to_item_id_data[i] = avio_rb16(pb);
+            }
+            atom_size -= size;
+            c->iref_count++;
+        }
+    }
+
+    for (i = 0; i < c->iref_count; i++) {
+        int j;
+        MOVItemReference *ref = &c->iref_data[i];
+
+        av_log(c->fc, AV_LOG_TRACE, "iref from_item_id=%u type=%s:\n", ref->from_item_id, av_fourcc2str(ref->type));
+
+        for (j = 0; j < ref->to_item_id_count; j++) {
+            av_log(c->fc, AV_LOG_TRACE, "\tto_item_id=%u\n", ref->to_item_id_data[j]);
+        }
+    }
+
+    return 0;
+}
+
+static int mov_read_idat(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    c->idat_len = atom.size - 8;
+
+    if (!c->idat_len)
+        return 0;
+
+    c->idat = av_malloc(c->idat_len);
+    if (!c->idat)
+        return AVERROR(ENOMEM);
+
+    return avio_read(pb, c->idat, c->idat_len);
+}
+
+static int mov_read_iloc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    int value;
+    int offset_size = 0;
+    int length_size = 0;
+    int base_offset_size = 0;
+    int index_size = 0;
+    int64_t base_offset = 0;
+    int i, j;
+
+    int version = avio_r8(pb);
+    avio_rb24(pb);
+
+    if (version > 2) {
+        avpriv_request_sample(c->fc, "Version %d", version);
+        return AVERROR_PATCHWELCOME;
+    }
+
+    value = avio_r8(pb);
+    offset_size = (value >> 4) & 0xf;
+    length_size = value & 0xf;
+
+    value = avio_r8(pb);
+    base_offset_size = (value >> 4) & 0xf;
+    if (version == 1 || version == 2)
+        index_size = value & 0xf;
+
+    if (version < 2)
+        c->iloc_count = avio_rb16(pb);
+    else if (version == 2)
+        c->iloc_count = avio_rb32(pb);
+
+    c->iloc_data = av_mallocz(c->iloc_count * sizeof(*c->iloc_data));
+    if (!c->iloc_data)
+        return AVERROR(ENOMEM);
+
+    for (i = 0; i < c->iloc_count; i++) {
+        MOVItemLocation *loc = &c->iloc_data[i];
+
+        if (version < 2)
+            loc->item_id = avio_rb16(pb);
+        else if (version == 2)
+            loc->item_id = avio_rb32(pb);
+
+        if (version == 1 || version == 2)
+            loc->construction_method = avio_rl16(pb) & 0xf;
+
+        loc->data_reference_index = avio_rb16(pb);
+
+        if (base_offset_size == 4)
+            base_offset = avio_rb32(pb);
+        else if (base_offset_size == 8)
+            base_offset = avio_rb64(pb);
+
+        loc->extent_count = avio_rb16(pb);
+        loc->extent_data = av_mallocz(loc->extent_count * sizeof(*loc->extent_data));
+        if (!loc->extent_data)
+            return AVERROR(ENOMEM);
+
+        for (j = 0; j < loc->extent_count; j++) {
+            MOVItemExtent *extent = &loc->extent_data[j];
+
+            extent->base_offset = base_offset;
+
+            if ((version == 1 || version == 2) && index_size > 0) {
+                if (index_size == 4) {
+                    extent->extent_index = avio_rb32(pb);
+                } else if (index_size == 8) {
+                    extent->extent_index = avio_rb64(pb);
+                }
+            }
+
+            if (offset_size == 4)
+                extent->extent_offset = avio_rb32(pb);
+            else if (offset_size == 8)
+                extent->extent_offset = avio_rb64(pb);
+
+            if (length_size == 4)
+                extent->extent_length = avio_rb32(pb);
+            else if (length_size == 8)
+                extent->extent_length = avio_rb64(pb);
+        }
+    }
+
+    for (i = 0; i < c->iloc_count; i++) {
+        MOVItemLocation *loc = &c->iloc_data[i];
+
+        av_log(c->fc, AV_LOG_TRACE, "iloc item_id=%u construction_method=%u:\n",
+               loc->item_id, loc->construction_method);
+
+        for (j = 0; j < loc->extent_count; j++) {
+            MOVItemExtent *extent = &loc->extent_data[j];
+            av_log(c->fc, AV_LOG_TRACE, "\t index=%u offset=%u length=%u\n",
+                   extent->extent_index, extent->extent_offset, extent->extent_length);
+        }
+    }
+
+    return 0;
+}
+
+static int mov_read_ipco(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    int i;
+    int64_t atom_size = atom.size;
+
+    while (atom_size > 0) {
+        MOVItemProperty *prop;
+        MOVItemProperty *ptr;
+
+        ptr = av_realloc_array(c->ip_data,
+                               c->ip_count + 1,
+                               sizeof(*c->ip_data));
+        if (!ptr)
+            return AVERROR(ENOMEM);
+
+        c->ip_data = ptr;
+        prop = &c->ip_data[c->ip_count];
+        prop->data_len = avio_rb32(pb) - 8;
+        prop->type = avio_rl32(pb);
+        prop->data = av_malloc(prop->data_len);
+        if (!prop->data)
+            return AVERROR(ENOMEM);
+        prop->offset = avio_tell(pb);
+        avio_read(pb, prop->data, prop->data_len);
+        atom_size -= 8 + prop->data_len;
+        c->ip_count++;
+    }
+
+    for (i = 0; i < c->ip_count; i++) {
+        MOVItemProperty *prop = &c->ip_data[i];
+        av_log(c->fc, AV_LOG_TRACE, "ip index=%d type=%s\n", i + 1, av_fourcc2str(prop->type));
+    }
+
+    return 0;
+}
+
+static int mov_read_ipma(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    unsigned i, j;
+    int version = avio_r8(pb);
+    int flags = avio_rb24(pb);
+
+    c->ipa_count = avio_rb32(pb);
+    if (!c->ipa_count)
+        return 0;
+
+    c->ipa_data = av_mallocz_array(c->ipa_count, sizeof(*c->ipa_data));
+    if (!c->ipa_data)
+        return AVERROR(ENOMEM);
+
+    for (i = 0; i < c->ipa_count; i++) {
+        MOVItemPropertyAssociation *assoc = &c->ipa_data[i];
+
+        if (version < 1) {
+            assoc->item_id = avio_rb16(pb);
+        } else {
+            assoc->item_id = avio_rb32(pb);
+        }
+
+        assoc->index_count = avio_r8(pb);
+        if (!assoc->index_count)
+            continue;
+
+        assoc->index_data = av_malloc_array(assoc->index_count, sizeof(*assoc->index_data));
+        if (!assoc->index_data)
+            return AVERROR(ENOMEM);
+
+        for (j = 0; j < assoc->index_count; j++) {
+            MOVItemPropertyAssociationIndex *index = &assoc->index_data[j];
+            if (flags & 1) {
+                unsigned value = avio_rl16(pb);
+                index->essential = value >> 14;
+                value &= 0x7fff;
+                index->item_index = (value << 7) | (value >> 7);
+            } else {
+                unsigned value = avio_r8(pb);
+                index->essential = value >> 7;
+                index->item_index = value & 0x7f;
+            }
+        }
+    }
+
+    for (i = 0; i < c->ipa_count; i++) {
+        MOVItemPropertyAssociation *assoc = &c->ipa_data[i];
+        av_log(c->fc, AV_LOG_TRACE, "ipa item_id=%u:\n", assoc->item_id);
+        for (j = 0; j < assoc->index_count; j++) {
+            MOVItemPropertyAssociationIndex *index = &assoc->index_data[j];
+            av_log(c->fc, AV_LOG_TRACE, "\tipa index essential=%u index=%u\n", index->essential, index->item_index);
+        }
+    }
+
+    return 0;
+}
+
+
+static int mov_read_iprp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    int ret;
+
+    ret = mov_read_default(c, pb, atom);
+
+    return ret;
+}
+
 /* this atom contains actual media data */
 static int mov_read_mdat(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
@@ -1120,6 +1502,9 @@ static int mov_read_ftyp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     if (strcmp(type, "qt  "))
         c->isom = 1;
+    if (!strcmp(type, "mif1") ||
+        !strcmp(type, "heic"))
+        c->heif = 1;
     av_log(c->fc, AV_LOG_DEBUG, "ISO: File Type Major Brand: %.4s\n",(char *)&type);
     av_dict_set(&c->fc->metadata, "major_brand", type, 0);
     minor_ver = avio_rb32(pb); /* minor version */
@@ -1381,6 +1766,38 @@ static int mov_read_colr(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     st->codecpar->color_trc       = color_trc;
     st->codecpar->color_space     = color_matrix;
     av_log(c->fc, AV_LOG_TRACE, "\n");
+
+    return 0;
+}
+
+static int mov_read_ispe(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    int ret;
+    AVStream *st;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+    st = c->fc->streams[c->fc->nb_streams - 1];
+
+    st->codecpar->width = avio_rb32(pb);
+    st->codecpar->height = avio_rb32(pb);
+
+    return 0;
+}
+
+static int mov_read_irot(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    int ret;
+    int angle;
+    AVStream *st;
+
+    if (c->fc->nb_streams < 1)
+        return 0;
+    st = c->fc->streams[c->fc->nb_streams - 1];
+
+    angle = (avio_r8(pb) & 0x3) * 90;
+
+    av_log(c->fc, AV_LOG_TRACE, "angle rotation = %d\n", angle);
 
     return 0;
 }
@@ -3971,17 +4388,139 @@ static int mov_read_custom(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return ret;
 }
 
+static MOVItemLocation *mov_get_item_location(MOVContext *c, unsigned int item_id)
+{
+    int i;
+
+    for (i = 0; i < c->iloc_count; i++) {
+        MOVItemLocation *loc = &c->iloc_data[i];
+
+        if (loc->item_id == item_id) {
+            return loc;
+        }
+    }
+
+    return NULL;
+}
+
+static MOVItemPropertyAssociation *mov_get_item_property_association(MOVContext *c, unsigned int item_id)
+{
+    int i;
+
+    for (i = 0; i < c->ipa_count; i++) {
+        MOVItemPropertyAssociation *assoc = &c->ipa_data[i];
+
+        if (assoc->item_id == item_id) {
+            return assoc;
+        }
+    }
+
+    return NULL;
+}
+
+static MOVItemProperty *mov_get_item_property(MOVContext *c, unsigned int index)
+{
+    av_assert0(index > 0);
+
+    return &c->ip_data[index - 1];
+}
+
+static int mov_add_heif_stream(MOVContext *c, AVIOContext *pb, MOVItemReference *ref)
+{
+    unsigned i, index = 0;
+    AVStream *st;
+    MOVStreamContext *sc;
+
+    st = avformat_new_stream(c->fc, NULL);
+    if (!st)
+        return AVERROR(ENOMEM);
+
+    st->id = c->fc->nb_streams;
+
+    sc = av_mallocz(sizeof(MOVStreamContext));
+    if (!sc)
+        return AVERROR(ENOMEM);
+
+    c->trak_index = st->index;
+    st->priv_data = sc;
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codecpar->codec_id = AV_CODEC_ID_HEVC;
+
+    fix_timescale(c, sc);
+
+    avpriv_set_pts_info(st, 64, 1, 1);
+
+#if 0
+
+    st->nb_index_entries = 0;
+    for (i = 0; i < ref->to_item_id_count; i++) {
+        unsigned int to_item_id = ref->to_item_id_data[i];
+        MOVItemLocation *loc = mov_get_item_location(c, to_item_id);
+        if (!loc)
+            continue;
+        st->nb_index_entries += loc->extent_count;
+    }
+
+    st->index_entries = av_malloc_array(st->nb_index_entries,
+                                        sizeof(*st->index_entries));
+    if (!st->index_entries)
+        return AVERROR(ENOMEM);
+
+    for (i = 0; i < ref->to_item_id_count; i++) {
+        int j;
+        unsigned int to_item_id = ref->to_item_id_data[i];
+        MOVItemLocation *loc = mov_get_item_location(c, to_item_id);
+        if (!loc)
+            continue;
+
+        for (j = 0; j < loc->extent_count; j++) {
+            MOVItemExtent *extent = &loc->extent_data[j];
+            AVIndexEntry *entry = &st->index_entries[index];
+            entry->pos = extent->extent_offset;
+            entry->size = extent->extent_length;
+
+            index++;
+        }
+    }
+#endif
+
+    return 0;
+}
+
 static int mov_read_meta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
+    c->found_meta = 1;
     while (atom.size > 8) {
+        int ret;
         uint32_t tag = avio_rl32(pb);
         atom.size -= 4;
         if (tag == MKTAG('h','d','l','r')) {
             avio_seek(pb, -8, SEEK_CUR);
             atom.size += 8;
-            return mov_read_default(c, pb, atom);
+            ret = mov_read_default(c, pb, atom);
+            if (ret < 0)
+                return ret;
+            break;
         }
     }
+
+    if (c->heif) {
+        int ret;
+        unsigned i;
+
+        c->time_scale = 1;
+
+        for (i = 0; i < c->iref_count; i++) {
+            MOVItemReference *ref = &c->iref_data[i];
+
+            if (ref->type == MKTAG('d','i','m','g')) {
+                ret = mov_add_heif_stream(c, pb, ref);
+                if (ret < 0)
+                    return ret;
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -5497,6 +6036,14 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('a','l','a','c'), mov_read_alac }, /* alac specific atom */
 { MKTAG('a','v','c','C'), mov_read_glbl },
 { MKTAG('p','a','s','p'), mov_read_pasp },
+{ MKTAG('p','i','t','m'), mov_read_pitm },
+{ MKTAG('i','i','n','f'), mov_read_iinf },
+{ MKTAG('i','r','e','f'), mov_read_iref },
+{ MKTAG('i','d','a','t'), mov_read_idat },
+{ MKTAG('i','l','o','c'), mov_read_iloc },
+{ MKTAG('i','p','r','p'), mov_read_iprp },
+{ MKTAG('i','p','c','o'), mov_read_ipco },
+{ MKTAG('i','p','m','a'), mov_read_ipma },
 { MKTAG('s','i','d','x'), mov_read_sidx },
 { MKTAG('s','t','b','l'), mov_read_default },
 { MKTAG('s','t','c','o'), mov_read_stco },
@@ -6173,8 +6720,15 @@ static int mov_read_header(AVFormatContext *s)
         mov_read_close(s);
         return err;
     }
-    } while ((pb->seekable & AVIO_SEEKABLE_NORMAL) && !mov->found_moov && !mov->moov_retry++);
-    if (!mov->found_moov) {
+    } while ((pb->seekable & AVIO_SEEKABLE_NORMAL) && !mov->found_moov && !mov->moov_retry++ && !mov->heif);
+    if (mov->heif) {
+        if (!mov->found_meta) {
+            av_log(s, AV_LOG_ERROR, "meta atom not found\n");
+            mov_read_close(s);
+            return AVERROR_INVALIDDATA;
+        }
+
+    } else if (!mov->found_moov) {
         av_log(s, AV_LOG_ERROR, "moov atom not found\n");
         mov_read_close(s);
         return AVERROR_INVALIDDATA;
