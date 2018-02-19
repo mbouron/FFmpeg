@@ -267,7 +267,8 @@ done:
 #if CONFIG_MPEG2_MEDIACODEC_DECODER || \
     CONFIG_MPEG4_MEDIACODEC_DECODER || \
     CONFIG_VP8_MEDIACODEC_DECODER   || \
-    CONFIG_VP9_MEDIACODEC_DECODER
+    CONFIG_VP9_MEDIACODEC_DECODER   || \
+    CONFIG_AAC_MEDIACODEC_DECODER
 static int common_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
 {
     int ret = 0;
@@ -351,13 +352,49 @@ static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
             goto done;
         break;
 #endif
+#if CONFIG_AAC_MEDIACODEC_DECODER
+    case AV_CODEC_ID_AAC:
+        codec_mime = "audio/mp4a-latm";
+
+        ret = common_set_extradata(avctx, format);
+        if (ret < 0)
+            goto done;
+        break;
+#endif
+#if CONFIG_MP3_MEDIACODEC_DECODER
+    case AV_CODEC_ID_MP3:
+        codec_mime = "audio/mpeg";
+
+        ret = common_set_extradata(avctx, format);
+        if (ret < 0)
+            goto done;
+        break;
+#endif
     default:
         av_assert0(0);
     }
 
     ff_AMediaFormat_setString(format, "mime", codec_mime);
-    ff_AMediaFormat_setInt32(format, "width", avctx->width);
-    ff_AMediaFormat_setInt32(format, "height", avctx->height);
+
+    if (avctx->codec_type == AVMEDIA_TYPE_VIDEO) {
+        if (avctx->width <= 0 || avctx->height <= 0) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid codec dimensions %dx%d\n", avctx->width, avctx->height);
+            ret = AVERROR(EINVAL);
+            goto done;
+        }
+
+        ff_AMediaFormat_setInt32(format, "width", avctx->width);
+        ff_AMediaFormat_setInt32(format, "height", avctx->height);
+    } else {
+        if (avctx->channels <= 0 || avctx->sample_rate <= 0) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid codec channels and sample rate %d, %d\n", avctx->channels, avctx->sample_rate);
+            ret = AVERROR(EINVAL);
+            goto done;
+        }
+        ff_AMediaFormat_setInt32(format, "channel-count", avctx->channels);
+        ff_AMediaFormat_setInt32(format, "sample-rate", avctx->sample_rate);
+        avctx->sample_fmt = AV_SAMPLE_FMT_S16;
+    }
 
     s->ctx = av_mallocz(sizeof(*s->ctx));
     if (!s->ctx) {
@@ -391,9 +428,33 @@ static int mediacodec_send_receive(AVCodecContext *avctx,
 {
     int ret;
 
+    if (avctx->codec_id == AV_CODEC_ID_AAC) {
+        AVPacket pkt;
+        uint8_t *data;
+        int data_size = 0;
+
+        data = av_packet_get_side_data(&s->buffered_pkt,
+                                       AV_PKT_DATA_NEW_EXTRADATA,
+                                       &data_size);
+        if (data_size) {
+            pkt.data = data;
+            pkt.size = data_size;
+            pkt.pts  = s->buffered_pkt.pts;
+            while (pkt.size) {
+                ret = ff_mediacodec_dec_send(avctx, s->ctx, &pkt, true);
+                if (ret == AVERROR(EAGAIN))
+                    break;
+                if (ret < 0)
+                    return ret;
+                pkt.size -= ret;
+                pkt.data += ret;
+            }
+        }
+    }
+
     /* send any pending data from buffered packet */
     while (s->buffered_pkt.size) {
-        ret = ff_mediacodec_dec_send(avctx, s->ctx, &s->buffered_pkt);
+        ret = ff_mediacodec_dec_send(avctx, s->ctx, &s->buffered_pkt, false);
         if (ret == AVERROR(EAGAIN))
             break;
         else if (ret < 0)
@@ -412,6 +473,9 @@ static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 {
     MediaCodecH264DecContext *s = avctx->priv_data;
     int ret;
+
+    /* do not wait for new audio buffers to be available */
+    bool wait = avctx->codec_type == AVMEDIA_TYPE_VIDEO ? true : false;
 
     /*
      * MediaCodec.flush() discards both input and output buffers, thus we
@@ -452,7 +516,7 @@ static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     ret = ff_decode_get_packet(avctx, &s->buffered_pkt);
     if (ret == AVERROR_EOF) {
         AVPacket null_pkt = { 0 };
-        ret = ff_mediacodec_dec_send(avctx, s->ctx, &null_pkt);
+        ret = ff_mediacodec_dec_send(avctx, s->ctx, &null_pkt, false);
         if (ret < 0)
             return ret;
     }
@@ -460,7 +524,7 @@ static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         return ret;
 
     /* crank decoder with new packet */
-    return mediacodec_send_receive(avctx, s, frame, true);
+    return mediacodec_send_receive(avctx, s, frame, wait);
 }
 
 static void mediacodec_decode_flush(AVCodecContext *avctx)
@@ -485,11 +549,11 @@ static const AVCodecHWConfigInternal *mediacodec_hw_configs[] = {
     NULL
 };
 
-#define DECLARE_MEDIACODEC_VDEC(short_name, full_name, codec_id, bsf)                              \
+#define DECLARE_MEDIACODEC_DEC(short_name, full_name, codec_type, codec_id, bsf)                   \
     AVCodec ff_##short_name##_mediacodec_decoder = {                                               \
         .name           = #short_name "_mediacodec",                                               \
         .long_name      = NULL_IF_CONFIG_SMALL(full_name "Android MediaCodec decoder"),            \
-        .type           = AVMEDIA_TYPE_VIDEO,                                                      \
+        .type           = codec_type,                                                              \
         .id             = codec_id,                                                                \
         .priv_data_size = sizeof(MediaCodecH264DecContext),                                        \
         .init           = mediacodec_decode_init,                                                  \
@@ -502,6 +566,12 @@ static const AVCodecHWConfigInternal *mediacodec_hw_configs[] = {
         .hw_configs     = mediacodec_hw_configs,                                                   \
         .wrapper_name   = "mediacodec",                                                            \
     };
+
+#define DECLARE_MEDIACODEC_VDEC(short_name, full_name, codec_id, bsf) \
+    DECLARE_MEDIACODEC_DEC(short_name, full_name, AVMEDIA_TYPE_VIDEO, codec_id, bsf)
+
+#define DECLARE_MEDIACODEC_ADEC(short_name, full_name, codec_id, bsf) \
+    DECLARE_MEDIACODEC_DEC(short_name, full_name, AVMEDIA_TYPE_AUDIO, codec_id, bsf)
 
 #if CONFIG_H264_MEDIACODEC_DECODER
 DECLARE_MEDIACODEC_VDEC(h264, "H.264", AV_CODEC_ID_H264, "h264_mp4toannexb")
@@ -525,4 +595,12 @@ DECLARE_MEDIACODEC_VDEC(vp8, "VP8", AV_CODEC_ID_VP8, NULL)
 
 #if CONFIG_VP9_MEDIACODEC_DECODER
 DECLARE_MEDIACODEC_VDEC(vp9, "VP9", AV_CODEC_ID_VP9, NULL)
+#endif
+
+#if CONFIG_AAC_MEDIACODEC_DECODER
+DECLARE_MEDIACODEC_ADEC(aac, "AAC", AV_CODEC_ID_AAC, "aac_adtstoasc")
+#endif
+
+#if CONFIG_MP3_MEDIACODEC_DECODER
+DECLARE_MEDIACODEC_ADEC(mp3, "MP3", AV_CODEC_ID_MP3, NULL)
 #endif
