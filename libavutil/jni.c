@@ -34,6 +34,7 @@
 #include "libavutil/log.h"
 
 static void *java_vm;
+static void *android_app_ctx;
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 int av_jni_set_jvm(void *vm, void *log_ctx)
@@ -63,6 +64,24 @@ void *av_jni_get_jvm(void *log_ctx)
     return vm;
 }
 
+void av_jni_set_android_app_ctx(void *app_ctx)
+{
+    pthread_mutex_lock(&lock);
+    android_app_ctx = app_ctx;
+    pthread_mutex_unlock(&lock);
+}
+
+void *av_jni_get_android_app_ctx(void)
+{
+    void *ctx;
+
+    pthread_mutex_lock(&lock);
+    ctx = android_app_ctx;
+    pthread_mutex_unlock(&lock);
+
+    return ctx;
+}
+
 #else
 
 int av_jni_set_jvm(void *vm, void *log_ctx)
@@ -71,6 +90,15 @@ int av_jni_set_jvm(void *vm, void *log_ctx)
 }
 
 void *av_jni_get_jvm(void *log_ctx)
+{
+    return NULL;
+}
+
+void av_jni_set_android_app_ctx(void *app_ctx)
+{
+}
+
+void *av_jni_get_android_app_ctx(void)
 {
     return NULL;
 }

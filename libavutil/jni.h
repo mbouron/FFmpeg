@@ -43,4 +43,21 @@ int av_jni_set_jvm(void *vm, void *log_ctx);
  */
 void *av_jni_get_jvm(void *log_ctx);
 
+/*
+ * Set the Android application context which will be used to retrieve the Android
+ * content resolver to resolve content uris.
+ *
+ * @param app_ctx global JNI reference to the Android application context
+ */
+void av_jni_set_android_app_ctx(void *app_ctx);
+
+/*
+ * Get the Android application context that has been set with
+ * av_jni_set_android_app_ctx.
+ *
+ * @return a pointer the the Android application context
+ */
+void *av_jni_get_android_app_ctx(void);
+
+
 #endif /* AVUTIL_JNI_H */
