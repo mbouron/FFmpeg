@@ -31,7 +31,7 @@
 
 #include "config.h"
 #include "jni.h"
-#include "ffjni.h"
+#include "jniutils.h"
 
 static JavaVM *java_vm;
 static pthread_key_t current_env;
@@ -50,14 +50,14 @@ static void jni_create_pthread_key(void)
     pthread_key_create(&current_env, jni_detach_env);
 }
 
-JNIEnv *ff_jni_get_env(void *log_ctx)
+JNIEnv *avpriv_jni_get_env(void *log_ctx)
 {
     int ret = 0;
     JNIEnv *env = NULL;
 
     pthread_mutex_lock(&lock);
     if (java_vm == NULL) {
-        java_vm = av_jni_get_java_vm(log_ctx);
+        java_vm = av_jni_get_jvm(log_ctx);
     }
 
     if (!java_vm) {
@@ -96,7 +96,7 @@ done:
     return env;
 }
 
-char *ff_jni_jstring_to_utf_chars(JNIEnv *env, jstring string, void *log_ctx)
+char *avpriv_jni_jstring_to_utf_chars(JNIEnv *env, jstring string, void *log_ctx)
 {
     char *ret = NULL;
     const char *utf_chars = NULL;
@@ -126,7 +126,7 @@ char *ff_jni_jstring_to_utf_chars(JNIEnv *env, jstring string, void *log_ctx)
     return ret;
 }
 
-jstring ff_jni_utf_chars_to_jstring(JNIEnv *env, const char *utf_chars, void *log_ctx)
+jstring avpriv_jni_utf_chars_to_jstring(JNIEnv *env, const char *utf_chars, void *log_ctx)
 {
     jstring ret;
 
@@ -140,7 +140,7 @@ jstring ff_jni_utf_chars_to_jstring(JNIEnv *env, const char *utf_chars, void *lo
     return ret;
 }
 
-int ff_jni_exception_get_summary(JNIEnv *env, jthrowable exception, char **error, void *log_ctx)
+int avpriv_jni_exception_get_summary(JNIEnv *env, jthrowable exception, char **error, void *log_ctx)
 {
     int ret = 0;
 
@@ -192,7 +192,7 @@ int ff_jni_exception_get_summary(JNIEnv *env, jthrowable exception, char **error
     }
 
     if (string) {
-        name = ff_jni_jstring_to_utf_chars(env, string, log_ctx);
+        name = avpriv_jni_jstring_to_utf_chars(env, string, log_ctx);
         (*env)->DeleteLocalRef(env, string);
         string = NULL;
     }
@@ -214,7 +214,7 @@ int ff_jni_exception_get_summary(JNIEnv *env, jthrowable exception, char **error
     }
 
     if (string) {
-        message = ff_jni_jstring_to_utf_chars(env, string, log_ctx);
+        message = avpriv_jni_jstring_to_utf_chars(env, string, log_ctx);
         (*env)->DeleteLocalRef(env, string);
         string = NULL;
     }
@@ -251,7 +251,7 @@ done:
     return ret;
 }
 
-int ff_jni_exception_check(JNIEnv *env, int log, void *log_ctx)
+int avpriv_jni_exception_check(JNIEnv *env, int log, void *log_ctx)
 {
     int ret;
 
@@ -271,7 +271,7 @@ int ff_jni_exception_check(JNIEnv *env, int log, void *log_ctx)
     exception = (*env)->ExceptionOccurred(env);
     (*(env))->ExceptionClear((env));
 
-    if ((ret = ff_jni_exception_get_summary(env, exception, &message, log_ctx)) < 0) {
+    if ((ret = avpriv_jni_exception_get_summary(env, exception, &message, log_ctx)) < 0) {
         (*env)->DeleteLocalRef(env, exception);
         return ret;
     }
@@ -284,7 +284,7 @@ int ff_jni_exception_check(JNIEnv *env, int log, void *log_ctx)
     return -1;
 }
 
-int ff_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfields_mapping, int global, void *log_ctx)
+int avpriv_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfields_mapping, int global, void *log_ctx)
 {
     int i, ret = 0;
     jclass last_clazz = NULL;
@@ -299,7 +299,7 @@ int ff_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfi
             last_clazz = NULL;
 
             clazz = (*env)->FindClass(env, jfields_mapping[i].name);
-            if ((ret = ff_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
+            if ((ret = avpriv_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
                 goto done;
             }
 
@@ -320,7 +320,7 @@ int ff_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfi
             switch(type) {
             case FF_JNI_FIELD: {
                 jfieldID field_id = (*env)->GetFieldID(env, last_clazz, jfields_mapping[i].method, jfields_mapping[i].signature);
-                if ((ret = ff_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
+                if ((ret = avpriv_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
                     goto done;
                 }
 
@@ -329,7 +329,7 @@ int ff_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfi
             }
             case FF_JNI_STATIC_FIELD: {
                 jfieldID field_id = (*env)->GetStaticFieldID(env, last_clazz, jfields_mapping[i].method, jfields_mapping[i].signature);
-                if ((ret = ff_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
+                if ((ret = avpriv_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
                     goto done;
                 }
 
@@ -338,7 +338,7 @@ int ff_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfi
             }
             case FF_JNI_METHOD: {
                 jmethodID method_id = (*env)->GetMethodID(env, last_clazz, jfields_mapping[i].method, jfields_mapping[i].signature);
-                if ((ret = ff_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
+                if ((ret = avpriv_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
                     goto done;
                 }
 
@@ -347,7 +347,7 @@ int ff_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfi
             }
             case FF_JNI_STATIC_METHOD: {
                 jmethodID method_id = (*env)->GetStaticMethodID(env, last_clazz, jfields_mapping[i].method, jfields_mapping[i].signature);
-                if ((ret = ff_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
+                if ((ret = avpriv_jni_exception_check(env, mandatory, log_ctx)) < 0 && mandatory) {
                     goto done;
                 }
 
@@ -367,13 +367,13 @@ int ff_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfi
 done:
     if (ret < 0) {
         /* reset jfields in case of failure so it does not leak references */
-        ff_jni_reset_jfields(env, jfields, jfields_mapping, global, log_ctx);
+        avpriv_jni_reset_jfields(env, jfields, jfields_mapping, global, log_ctx);
     }
 
     return ret;
 }
 
-int ff_jni_reset_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfields_mapping, int global, void *log_ctx)
+int avpriv_jni_reset_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfields_mapping, int global, void *log_ctx)
 {
     int i;
 

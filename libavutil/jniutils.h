@@ -20,8 +20,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_FFJNI_H
-#define AVCODEC_FFJNI_H
+#ifndef AVUTIL_JNIUTILS_H
+#define AVUTIL_JNIUTILS_H
 
 #include <jni.h>
 
@@ -37,7 +37,7 @@
  * @param log_ctx context used for logging, can be NULL
  * @return the JNI environment on success, NULL otherwise
  */
-JNIEnv *ff_jni_get_env(void *log_ctx);
+JNIEnv *avpriv_jni_get_env(void *log_ctx);
 
 /*
  * Convert a jstring to its utf characters equivalent.
@@ -48,7 +48,7 @@ JNIEnv *ff_jni_get_env(void *log_ctx);
  * @return a pointer to an array of unicode characters on success, NULL
  * otherwise
  */
-char *ff_jni_jstring_to_utf_chars(JNIEnv *env, jstring string, void *log_ctx);
+char *avpriv_jni_jstring_to_utf_chars(JNIEnv *env, jstring string, void *log_ctx);
 
 /*
  * Convert utf chars to its jstring equivalent.
@@ -58,7 +58,7 @@ char *ff_jni_jstring_to_utf_chars(JNIEnv *env, jstring string, void *log_ctx);
  * @param log_ctx context used for logging, can be NULL
  * @return a Java string object on success, NULL otherwise
  */
-jstring ff_jni_utf_chars_to_jstring(JNIEnv *env, const char *utf_chars, void *log_ctx);
+jstring avpriv_jni_utf_chars_to_jstring(JNIEnv *env, const char *utf_chars, void *log_ctx);
 
 /*
  * Extract the error summary from a jthrowable in the form of "className: errorMessage"
@@ -70,7 +70,7 @@ jstring ff_jni_utf_chars_to_jstring(JNIEnv *env, const char *utf_chars, void *lo
  * @param log_ctx context used for logging, can be NULL
  * @return 0 on success, < 0 otherwise
  */
-int ff_jni_exception_get_summary(JNIEnv *env, jthrowable exception, char **error, void *log_ctx);
+int avpriv_jni_exception_get_summary(JNIEnv *env, jthrowable exception, char **error, void *log_ctx);
 
 /*
  * Check if an exception has occurred,log it using av_log and clear it.
@@ -80,34 +80,30 @@ int ff_jni_exception_get_summary(JNIEnv *env, jthrowable exception, char **error
  * 0 disables logging, != 0 enables logging
  * @param log_ctx context used for logging, can be NULL
  */
-int ff_jni_exception_check(JNIEnv *env, int log, void *log_ctx);
+int avpriv_jni_exception_check(JNIEnv *env, int log, void *log_ctx);
 
 /*
  * Jni field type.
  */
 enum FFJniFieldType {
-
     FF_JNI_CLASS,
     FF_JNI_FIELD,
     FF_JNI_STATIC_FIELD,
     FF_JNI_METHOD,
     FF_JNI_STATIC_METHOD
-
 };
 
 /*
  * Jni field describing a class, a field or a method to be retrieved using
- * the ff_jni_init_jfields method.
+ * the avpriv_jni_init_jfields method.
  */
 struct FFJniField {
-
     const char *name;
     const char *method;
     const char *signature;
     enum FFJniFieldType type;
     int offset;
     int mandatory;
-
 };
 
 /*
@@ -124,7 +120,7 @@ struct FFJniField {
  * @param log_ctx context used for logging, can be NULL
  * @return 0 on success, < 0 otherwise
  */
-int ff_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfields_mapping, int global, void *log_ctx);
+int avpriv_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfields_mapping, int global, void *log_ctx);
 
 /*
  * Delete class references, field ids and method ids of an arbitrary structure.
@@ -140,6 +136,6 @@ int ff_jni_init_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfi
  * @param log_ctx context used for logging, can be NULL
  * @return 0 on success, < 0 otherwise
  */
-int ff_jni_reset_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfields_mapping, int global, void *log_ctx);
+int avpriv_jni_reset_jfields(JNIEnv *env, void *jfields, const struct FFJniField *jfields_mapping, int global, void *log_ctx);
 
-#endif /* AVCODEC_FFJNI_H */
+#endif /* AVCODEC_JNIUTILS_H */

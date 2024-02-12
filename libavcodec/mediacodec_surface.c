@@ -24,7 +24,7 @@
 #include <jni.h>
 
 #include "libavutil/mem.h"
-#include "ffjni.h"
+#include "libavutil/jniutils.h"
 #include "mediacodec_surface.h"
 
 FFANativeWindow *ff_mediacodec_surface_ref(void *surface, void *native_window, void *log_ctx)
@@ -38,7 +38,7 @@ FFANativeWindow *ff_mediacodec_surface_ref(void *surface, void *native_window, v
     if (surface) {
         JNIEnv *env = NULL;
 
-        env = ff_jni_get_env(log_ctx);
+        env = avpriv_jni_get_env(log_ctx);
         if (env)
             ret->surface = (*env)->NewGlobalRef(env, surface);
     }
@@ -64,7 +64,7 @@ int ff_mediacodec_surface_unref(FFANativeWindow *window, void *log_ctx)
     if (window->surface) {
         JNIEnv *env = NULL;
 
-        env = ff_jni_get_env(log_ctx);
+        env = avpriv_jni_get_env(log_ctx);
         if (env)
             (*env)->DeleteGlobalRef(env, window->surface);
     }

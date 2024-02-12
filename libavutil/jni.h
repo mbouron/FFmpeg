@@ -20,10 +20,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_JNI_H
-#define AVCODEC_JNI_H
-
-#include <libavutil/attributes.h>
+#ifndef AVUTIL_JNI_H
+#define AVUTIL_JNI_H
 
 /*
  * Manually set a Java virtual machine which will be used to retrieve the JNI
@@ -34,21 +32,15 @@
  * @param vm Java virtual machine
  * @param log_ctx context used for logging, can be NULL
  * @return 0 on success, < 0 otherwise
- *
- * @deprecated use av_jni_set_jvm from libavutil/jni.h
  */
-attribute_deprecated
-int av_jni_set_java_vm(void *vm, void *log_ctx);
+int av_jni_set_jvm(void *vm, void *log_ctx);
 
 /*
  * Get the Java virtual machine which has been set with av_jni_set_java_vm.
  *
  * @param vm Java virtual machine
  * @return a pointer to the Java virtual machine
- *
- * @deprecated use av_jni_get_jvm from libavutil/jni.h
  */
-attribute_deprecated
-void *av_jni_get_java_vm(void *log_ctx);
+void *av_jni_get_jvm(void *log_ctx);
 
-#endif /* AVCODEC_JNI_H */
+#endif /* AVUTIL_JNI_H */

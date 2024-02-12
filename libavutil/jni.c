@@ -20,19 +20,59 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config.h"
+
 #include <stdlib.h>
 
-#include "libavutil/error.h"
 #include "libavutil/jni.h"
+#include "libavutil/error.h"
 
-#include "jni.h"
+#if CONFIG_JNI
+#include <jni.h>
+#include <pthread.h>
 
-int av_jni_set_java_vm(void *vm, void *log_ctx)
+#include "libavutil/log.h"
+
+static void *java_vm;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+
+int av_jni_set_jvm(void *vm, void *log_ctx)
 {
-    return av_jni_set_jvm(vm, log_ctx);
+    int ret = 0;
+
+    pthread_mutex_lock(&lock);
+    if (java_vm == NULL) {
+        java_vm = vm;
+    } else if (java_vm != vm) {
+        ret = AVERROR(EINVAL);
+        av_log(log_ctx, AV_LOG_ERROR, "A Java virtual machine has already been set");
+    }
+    pthread_mutex_unlock(&lock);
+
+    return ret;
 }
 
-void *av_jni_get_java_vm(void *log_ctx)
+void *av_jni_get_jvm(void *log_ctx)
 {
-    return av_jni_get_jvm(log_ctx);
+    void *vm;
+
+    pthread_mutex_lock(&lock);
+    vm = java_vm;
+    pthread_mutex_unlock(&lock);
+
+    return vm;
 }
+
+#else
+
+int av_jni_set_jvm(void *vm, void *log_ctx)
+{
+    return AVERROR(ENOSYS);
+}
+
+void *av_jni_get_jvm(void *log_ctx)
+{
+    return NULL;
+}
+
+#endif

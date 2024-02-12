@@ -29,6 +29,7 @@
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
 #include "libavutil/intreadwrite.h"
+#include "libavutil/jni.h"
 #include "libavutil/pixfmt.h"
 #include "libavutil/internal.h"
 
@@ -314,7 +315,7 @@ static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
     MediaCodecH264DecContext *s = avctx->priv_data;
 
     if (s->use_ndk_codec < 0)
-        s->use_ndk_codec = !av_jni_get_java_vm(avctx);
+        s->use_ndk_codec = !av_jni_get_jvm(avctx);
 
     format = ff_AMediaFormat_new(s->use_ndk_codec);
     if (!format) {

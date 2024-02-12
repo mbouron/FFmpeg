@@ -31,9 +31,9 @@
 #include <jni.h>
 
 #include "libavcodec/avcodec.h"
+#include "libavutil/jniutils.h"
 #include "libavutil/mem.h"
 
-#include "ffjni.h"
 #include "mediacodecdec_common.h"
 
 AVMediaCodecContext *av_mediacodec_alloc_context(void)
@@ -46,7 +46,7 @@ int av_mediacodec_default_init(AVCodecContext *avctx, AVMediaCodecContext *ctx, 
     int ret = 0;
     JNIEnv *env = NULL;
 
-    env = ff_jni_get_env(avctx);
+    env = avpriv_jni_get_env(avctx);
     if (!env) {
         return AVERROR_EXTERNAL;
     }
@@ -72,7 +72,7 @@ void av_mediacodec_default_free(AVCodecContext *avctx)
         return;
     }
 
-    env = ff_jni_get_env(avctx);
+    env = avpriv_jni_get_env(avctx);
     if (!env) {
         return;
     }
