@@ -24,6 +24,7 @@
 #define AVUTIL_JNIUTILS_H
 
 #include <jni.h>
+#include <stdlib.h>
 
 /*
  * Attach permanently a JNI environment to the current thread and retrieve it.
@@ -102,7 +103,7 @@ struct FFJniField {
     const char *method;
     const char *signature;
     enum FFJniFieldType type;
-    int offset;
+    size_t offset;
     int mandatory;
 };
 
