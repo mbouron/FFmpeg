@@ -48,8 +48,10 @@ void *av_jni_get_jvm(void *log_ctx);
  * content resolver to resolve content uris.
  *
  * @param app_ctx global JNI reference to the Android application context
+ * @param log_ctx context used for logging, can be NULL
+ * @return 0 on success, < 0 otherwise
  */
-void av_jni_set_android_app_ctx(void *app_ctx);
+int av_jni_set_android_app_ctx(void *app_ctx, void *log_ctx);
 
 /*
  * Get the Android application context that has been set with

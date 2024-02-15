@@ -32,6 +32,7 @@
 #include <pthread.h>
 
 #include "libavutil/log.h"
+#include "libavutil/jniutils.h"
 
 static void *java_vm;
 static void *android_app_ctx;
@@ -64,11 +65,23 @@ void *av_jni_get_jvm(void *log_ctx)
     return vm;
 }
 
-void av_jni_set_android_app_ctx(void *app_ctx)
+int av_jni_set_android_app_ctx(void *app_ctx, void *log_ctx)
 {
+    JNIEnv *env = avpriv_jni_get_env(log_ctx);
+    if (!env)
+        return AVERROR(EINVAL);
+
+    jobjectRefType type = (*env)->GetObjectRefType(env, app_ctx);
+    if (type != JNIGlobalRefType) {
+        av_log(log_ctx, AV_LOG_ERROR, "Application context must be passed as a global reference");
+        return AVERROR(EINVAL);
+    }
+
     pthread_mutex_lock(&lock);
     android_app_ctx = app_ctx;
     pthread_mutex_unlock(&lock);
+
+    return 0;
 }
 
 void *av_jni_get_android_app_ctx(void)
@@ -94,8 +107,9 @@ void *av_jni_get_jvm(void *log_ctx)
     return NULL;
 }
 
-void av_jni_set_android_app_ctx(void *app_ctx)
+int av_jni_set_android_app_ctx(void *app_ctx, void *log_ctx)
 {
+    return AVERROR(ENOSYS);
 }
 
 void *av_jni_get_android_app_ctx(void)
