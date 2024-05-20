@@ -81,7 +81,8 @@ int ff_mediacodec_dec_init(AVCodecContext *avctx,
 int ff_mediacodec_dec_send(AVCodecContext *avctx,
                            MediaCodecDecContext *s,
                            AVPacket *pkt,
-                           bool wait);
+                           bool wait,
+                           bool codec_config);
 
 int ff_mediacodec_dec_receive(AVCodecContext *avctx,
                               MediaCodecDecContext *s,

@@ -35,6 +35,7 @@
 #include "avcodec.h"
 #include "codec_internal.h"
 #include "decode.h"
+#include "flac_parse.h"
 #include "h264_parse.h"
 #include "h264_ps.h"
 #include "hevc_parse.h"
@@ -43,6 +44,7 @@
 #include "jni.h"
 #include "mediacodec_wrapper.h"
 #include "mediacodecdec_common.h"
+#include "xiph.h"
 
 typedef struct MediaCodecH264DecContext {
 
@@ -286,11 +288,88 @@ done:
 }
 #endif
 
+#if CONFIG_FLAC_MEDIACODEC_DECODER
+static int flac_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
+{
+    uint8_t *streaminfo;
+    uint8_t buffer[42];
+
+    if (!avctx->extradata) {
+        return 0;
+    }
+
+    if (!ff_flac_is_extradata_valid(avctx, &streaminfo))
+        return AVERROR_INVALIDDATA;
+
+    buffer[0] = 'f';
+    buffer[1] = 'L';
+    buffer[2] = 'a';
+    buffer[3] = 'C';
+    buffer[4] = 0x80;
+    buffer[5] = 0;
+    buffer[6] = 0;
+    buffer[7] = 0x22;
+    memcpy(buffer + 8, streaminfo, 34);
+
+    /* csd-0: fLaC + streaminfo */
+    ff_AMediaFormat_setBuffer(format, "csd-0", buffer, 42);
+
+    return 0;
+}
+#endif
+
+#if CONFIG_OPUS_MEDIACODEC_DECODER
+static int opus_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
+{
+    if (!avctx->extradata_size) {
+        return 0;
+    }
+
+    if (avctx->extradata_size < 19) {
+        return AVERROR_INVALIDDATA;
+    }
+
+    ff_AMediaFormat_setBuffer(format, "csd-0", avctx->extradata, 19);
+
+    return 0;
+}
+#endif
+
+#if CONFIG_VORBIS_MEDIACODEC_DECODER
+static int vorbis_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
+{
+    int ret;
+    const uint8_t *header_start[3];
+    int header_len[3];
+
+    if (!avctx->extradata) {
+        return 0;
+    }
+
+    ret = avpriv_split_xiph_headers(avctx->extradata, avctx->extradata_size, 30, header_start, header_len);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Could not parse extradata\n");
+        return ret;
+    }
+
+    /* csd-0: identification header, csd-1: setup header */
+    ff_AMediaFormat_setBuffer(format, "csd-0", header_start[0], header_len[0]);
+    ff_AMediaFormat_setBuffer(format, "csd-1", header_start[2], header_len[2]);
+
+    return 0;
+}
+#endif
+
 #if CONFIG_MPEG2_MEDIACODEC_DECODER || \
     CONFIG_MPEG4_MEDIACODEC_DECODER || \
     CONFIG_VP8_MEDIACODEC_DECODER   || \
     CONFIG_VP9_MEDIACODEC_DECODER   || \
-    CONFIG_AV1_MEDIACODEC_DECODER
+    CONFIG_AV1_MEDIACODEC_DECODER   || \
+    CONFIG_AAC_MEDIACODEC_DECODER   || \
+    CONFIG_AMRNB_MEDIACODEC_DECODER || \
+    CONFIG_AMRWB_MEDIACODEC_DECODER || \
+    CONFIG_MP3_MEDIACODEC_DECODER   || \
+    CONFIG_OPUS_MEDIACODEC_DECODER
 static int common_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
 {
     int ret = 0;
@@ -387,13 +466,82 @@ static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
             goto done;
         break;
 #endif
+#if CONFIG_AAC_MEDIACODEC_DECODER
+    case AV_CODEC_ID_AAC:
+        codec_mime = "audio/mp4a-latm";
+
+        ret = common_set_extradata(avctx, format);
+        if (ret < 0)
+            goto done;
+        break;
+#endif
+#if CONFIG_AMRNB_MEDIACODEC_DECODER
+    case AV_CODEC_ID_AMR_NB:
+        codec_mime = "audio/3gpp";
+
+        ret = common_set_extradata(avctx, format);
+        if (ret < 0)
+            goto done;
+        break;
+#endif
+#if CONFIG_AMRWB_MEDIACODEC_DECODER
+    case AV_CODEC_ID_AMR_WB:
+        codec_mime = "audio/amr-wb";
+
+        ret = common_set_extradata(avctx, format);
+        if (ret < 0)
+            goto done;
+        break;
+#endif
+#if CONFIG_FLAC_MEDIACODEC_DECODER
+    case AV_CODEC_ID_FLAC:
+        codec_mime = "audio/flac";
+
+        ret = flac_set_extradata(avctx, format);
+        if (ret < 0)
+            goto done;
+        break;
+#endif
+#if CONFIG_MP3_MEDIACODEC_DECODER
+    case AV_CODEC_ID_MP3:
+        codec_mime = "audio/mpeg";
+
+        ret = common_set_extradata(avctx, format);
+        if (ret < 0)
+            goto done;
+        break;
+#endif
+#if CONFIG_OPUS_MEDIACODEC_DECODER
+    case AV_CODEC_ID_OPUS:
+        codec_mime = "audio/opus";
+
+        ret = opus_set_extradata(avctx, format);
+        if (ret < 0)
+            goto done;
+        break;
+#endif
+#if CONFIG_VORBIS_MEDIACODEC_DECODER
+    case AV_CODEC_ID_VORBIS:
+        codec_mime = "audio/vorbis";
+
+        ret = vorbis_set_extradata(avctx, format);
+        if (ret < 0)
+            goto done;
+        break;
+#endif
     default:
         av_assert0(0);
     }
 
     ff_AMediaFormat_setString(format, "mime", codec_mime);
-    ff_AMediaFormat_setInt32(format, "width", avctx->width);
-    ff_AMediaFormat_setInt32(format, "height", avctx->height);
+
+    if (avctx->codec_type == AVMEDIA_TYPE_VIDEO) {
+        ff_AMediaFormat_setInt32(format, "width", avctx->width);
+        ff_AMediaFormat_setInt32(format, "height", avctx->height);
+    } else {
+        ff_AMediaFormat_setInt32(format, "channel-count", avctx->ch_layout.nb_channels);
+        ff_AMediaFormat_setInt32(format, "sample-rate", avctx->sample_rate);
+    }
 
     s->ctx = av_mallocz(sizeof(*s->ctx));
     if (!s->ctx) {
@@ -482,7 +630,7 @@ static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
         /* try to flush any buffered packet data */
         if (s->buffered_pkt.size > 0) {
-            ret = ff_mediacodec_dec_send(avctx, s->ctx, &s->buffered_pkt, false);
+            ret = ff_mediacodec_dec_send(avctx, s->ctx, &s->buffered_pkt, false, false);
             if (ret >= 0) {
                 s->buffered_pkt.size -= ret;
                 s->buffered_pkt.data += ret;
@@ -509,7 +657,7 @@ static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         ret = ff_decode_get_packet(avctx, &s->buffered_pkt);
         if (ret == AVERROR_EOF) {
             AVPacket null_pkt = { 0 };
-            ret = ff_mediacodec_dec_send(avctx, s->ctx, &null_pkt, true);
+            ret = ff_mediacodec_dec_send(avctx, s->ctx, &null_pkt, true, false);
             if (ret < 0)
                 return ret;
             return ff_mediacodec_dec_receive(avctx, s->ctx, frame, true);
@@ -609,4 +757,66 @@ DECLARE_MEDIACODEC_VDEC(vp9, "VP9", AV_CODEC_ID_VP9, NULL)
 
 #if CONFIG_AV1_MEDIACODEC_DECODER
 DECLARE_MEDIACODEC_VDEC(av1, "AV1", AV_CODEC_ID_AV1, NULL)
+#endif
+
+#define AD AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_DECODING_PARAM
+static const AVOption ff_mediacodec_adec_options[] = {
+    { "ndk_codec", "Use MediaCodec from NDK",
+                   OFFSET(use_ndk_codec), AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, AD },
+    { NULL }
+};
+
+#define DECLARE_MEDIACODEC_ACLASS(short_name)                   \
+static const AVClass ff_##short_name##_mediacodec_dec_class = { \
+    .class_name = #short_name "_mediacodec",                    \
+    .item_name  = av_default_item_name,                         \
+    .option     = ff_mediacodec_adec_options,                   \
+    .version    = LIBAVUTIL_VERSION_INT,                        \
+};
+
+#define DECLARE_MEDIACODEC_ADEC(short_name, full_name, codec_id, bsf)                          \
+DECLARE_MEDIACODEC_VCLASS(short_name)                                                          \
+const FFCodec ff_ ## short_name ## _mediacodec_decoder = {                                     \
+    .p.name         = #short_name "_mediacodec",                                               \
+    CODEC_LONG_NAME(full_name " Android MediaCodec decoder"),                                  \
+    .p.type         = AVMEDIA_TYPE_AUDIO,                                                      \
+    .p.id           = codec_id,                                                                \
+    .p.priv_class   = &ff_##short_name##_mediacodec_dec_class,                                 \
+    .priv_data_size = sizeof(MediaCodecH264DecContext),                                        \
+    .init           = mediacodec_decode_init,                                                  \
+    FF_CODEC_RECEIVE_FRAME_CB(mediacodec_receive_frame),                                       \
+    .flush          = mediacodec_decode_flush,                                                 \
+    .close          = mediacodec_decode_close,                                                 \
+    .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE,                              \
+    .caps_internal  = FF_CODEC_CAP_NOT_INIT_THREADSAFE,                                        \
+    .bsfs           = bsf,                                                                     \
+    .p.wrapper_name = "mediacodec",                                                            \
+};                                                                                             \
+
+#if CONFIG_AAC_MEDIACODEC_DECODER
+DECLARE_MEDIACODEC_ADEC(aac, "AAC", AV_CODEC_ID_AAC, "aac_adtstoasc")
+#endif
+
+#if CONFIG_AMRNB_MEDIACODEC_DECODER
+DECLARE_MEDIACODEC_ADEC(amrnb, "AMR-NB", AV_CODEC_ID_AMR_NB, NULL)
+#endif
+
+#if CONFIG_AMRWB_MEDIACODEC_DECODER
+DECLARE_MEDIACODEC_ADEC(amrwb, "AMR-WB", AV_CODEC_ID_AMR_WB, NULL)
+#endif
+
+#if CONFIG_FLAC_MEDIACODEC_DECODER
+DECLARE_MEDIACODEC_ADEC(flac, "FLAC", AV_CODEC_ID_FLAC, NULL)
+#endif
+
+#if CONFIG_MP3_MEDIACODEC_DECODER
+DECLARE_MEDIACODEC_ADEC(mp3, "MP3", AV_CODEC_ID_MP3, NULL)
+#endif
+
+#if CONFIG_OPUS_MEDIACODEC_DECODER
+DECLARE_MEDIACODEC_ADEC(opus, "OPUS", AV_CODEC_ID_OPUS, NULL)
+#endif
+
+#if CONFIG_VORBIS_MEDIACODEC_DECODER
+DECLARE_MEDIACODEC_ADEC(vorbis, "VORBIS", AV_CODEC_ID_VORBIS, NULL)
 #endif
