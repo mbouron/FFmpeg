@@ -658,6 +658,8 @@ int ff_mediacodec_dec_send(AVCodecContext *avctx, MediaCodecDecContext *s,
         if (pts && avctx->pkt_timebase.num && avctx->pkt_timebase.den) {
             pts = av_rescale_q(pts, avctx->pkt_timebase, AV_TIME_BASE_Q);
         }
+        if (pts < 0)
+            pts = 0;
 
         if (need_draining) {
             uint32_t flags = ff_AMediaCodec_getBufferFlagEndOfStream(codec);
